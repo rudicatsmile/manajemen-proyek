@@ -17,6 +17,7 @@ import {
   Trash2,
   KeyRound,
   Banknote,
+  Globe,
 } from "lucide-react";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,7 @@ export default function EditProjectPage({
   const [backendTech, setBackendTech] = React.useState("");
   const [databaseTech, setDatabaseTech] = React.useState("");
   const [repositoryUrl, setRepositoryUrl] = React.useState("");
+  const [liveUrl, setLiveUrl] = React.useState("");
   const [contractAmountInput, setContractAmountInput] = React.useState("");
   const [credentialsList, setCredentialsList] = React.useState<
     Array<{
@@ -91,6 +93,7 @@ export default function EditProjectPage({
         setBackendTech(proj.backendTech || "");
         setDatabaseTech(proj.databaseTech || "");
         setRepositoryUrl(proj.repositoryUrl || "");
+        setLiveUrl(proj.liveUrl || "");
         setContractAmountInput(proj.contractAmount ? formatNumberWithDots(proj.contractAmount) : "");
         if (proj.credentials && proj.credentials.length > 0) {
           setCredentialsList(
@@ -194,6 +197,7 @@ export default function EditProjectPage({
         backendTech,
         databaseTech,
         repositoryUrl,
+        liveUrl: liveUrl.trim() || undefined,
         contractAmount: parseRupiahInput(contractAmountInput),
         credentialUsername: validCredentials[0]?.username || "",
         credentialPassword: validCredentials[0]?.password || "",
@@ -391,6 +395,22 @@ export default function EditProjectPage({
                     value={repositoryUrl}
                     onChange={(e) => setRepositoryUrl(e.target.value)}
                   />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <Globe className="h-3.5 w-3.5 text-blue-600" />
+                    URL Website / Domain Live (Untuk Pemantauan Uptime & SSL)
+                  </label>
+                  <Input
+                    type="url"
+                    value={liveUrl}
+                    onChange={(e) => setLiveUrl(e.target.value)}
+                    placeholder="Contoh: https://klien-domain.com"
+                  />
+                  <p className="text-[11px] text-slate-400">
+                    Alamat website produksi klien yang dipantau status uptime dan masa berlaku sertifikat SSL-nya.
+                  </p>
                 </div>
               </CardContent>
             </Card>

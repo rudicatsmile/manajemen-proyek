@@ -179,6 +179,16 @@ function mapDbProject(
     backendTech: p.backendTech || "",
     databaseTech: p.databaseTech || "",
     repositoryUrl: p.repositoryUrl || "",
+    liveUrl: p.liveUrl || undefined,
+    lastHealthStatus: (p.lastHealthStatus as Project["lastHealthStatus"]) || "unchecked",
+    lastHttpCode: p.lastHttpCode ? parseInt(p.lastHttpCode, 10) : undefined,
+    lastResponseTime: p.lastResponseTime ? parseInt(p.lastResponseTime, 10) : undefined,
+    sslStatus: (p.sslStatus as Project["sslStatus"]) || "unchecked",
+    sslExpiresAt: p.sslExpiresAt ? p.sslExpiresAt.toISOString() : undefined,
+    sslDaysRemaining: p.sslExpiresAt
+      ? Math.floor((p.sslExpiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+      : undefined,
+    lastCheckedAt: p.lastCheckedAt ? p.lastCheckedAt.toISOString() : undefined,
     credentialUsername: p.credentialUsername || "",
     credentialPasswordEncrypted: p.credentialPassword
       ? `enc_${p.credentialPassword.substring(0, 16)}_gcm`
@@ -318,6 +328,7 @@ export async function createProjectAction(data: ProjectFormValues) {
           backendTech: parsed.backendTech || null,
           databaseTech: parsed.databaseTech || null,
           repositoryUrl: repoUrl || null,
+          liveUrl: parsed.liveUrl ? parsed.liveUrl.trim() : null,
           contractAmount: parsed.contractAmount ? parsed.contractAmount.toString() : null,
           credentialUsername: parsed.credentialUsername || null,
           credentialPassword: enc ? enc.encrypted : null,
@@ -480,6 +491,7 @@ export async function updateProjectAction(id: string, data: ProjectFormValues) {
         backendTech: parsed.backendTech || null,
         databaseTech: parsed.databaseTech || null,
         repositoryUrl: parsed.repositoryUrl || null,
+        liveUrl: parsed.liveUrl !== undefined ? (parsed.liveUrl ? parsed.liveUrl.trim() : null) : undefined,
         contractAmount: parsed.contractAmount !== undefined ? (parsed.contractAmount ? parsed.contractAmount.toString() : null) : undefined,
         credentialUsername: parsed.credentialUsername || null,
         updatedAt: new Date(),
@@ -588,6 +600,7 @@ export async function updateProjectAction(id: string, data: ProjectFormValues) {
       backendTech: parsed.backendTech || "",
       databaseTech: parsed.databaseTech || "",
       repositoryUrl: parsed.repositoryUrl || prev.repositoryUrl,
+      liveUrl: parsed.liveUrl !== undefined ? parsed.liveUrl : prev.liveUrl,
       contractAmount: parsed.contractAmount !== undefined ? parsed.contractAmount : prev.contractAmount,
       credentialUsername: parsed.credentialUsername || "",
       credentialPasswordEncrypted: enc ? `enc_${enc.encrypted.slice(0, 16)}_gcm` : prev.credentialPasswordEncrypted,

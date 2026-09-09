@@ -333,6 +333,32 @@ export default function ProjectsPage() {
                           >
                             {statusInfo.label}
                           </span>
+
+                          {/* Live Website Indicator */}
+                          {project.liveUrl && (
+                            <a
+                              href={project.liveUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold border bg-slate-50 text-slate-700 border-slate-200 hover:text-blue-600 hover:border-blue-300 dark:bg-zinc-800/80 dark:text-slate-300 dark:border-zinc-700 transition-colors"
+                              title={`Buka live website: ${project.liveUrl}`}
+                            >
+                              <span
+                                className={cn(
+                                  "h-2 w-2 rounded-full",
+                                  project.lastHealthStatus === "online"
+                                    ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.7)]"
+                                    : project.lastHealthStatus === "degraded"
+                                    ? "bg-amber-500"
+                                    : project.lastHealthStatus === "offline"
+                                    ? "bg-rose-500"
+                                    : "bg-slate-400"
+                                )}
+                              />
+                              <span>Live Website</span>
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          )}
                         </div>
                         <p className="text-xs text-slate-500 flex items-center gap-1.5">
                           <Building2 className="h-3.5 w-3.5 text-slate-400" />
@@ -501,6 +527,32 @@ export default function ProjectsPage() {
                     >
                       {statusInfo.label}
                     </span>
+
+                    {/* Compact Live Dot */}
+                    {project.liveUrl && (
+                      <a
+                        href={project.liveUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-[10px] text-slate-500 hover:text-blue-600 transition-colors shrink-0"
+                        title={`Live: ${project.liveUrl}`}
+                      >
+                        <span
+                          className={cn(
+                            "h-1.5 w-1.5 rounded-full",
+                            project.lastHealthStatus === "online"
+                              ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.7)]"
+                              : project.lastHealthStatus === "degraded"
+                              ? "bg-amber-500"
+                              : project.lastHealthStatus === "offline"
+                              ? "bg-rose-500"
+                              : "bg-slate-400"
+                          )}
+                        />
+                        <span className="hidden md:inline font-mono">Live</span>
+                        <ExternalLink className="h-2.5 w-2.5" />
+                      </a>
+                    )}
                   </div>
 
                   {/* Right Action Buttons */}

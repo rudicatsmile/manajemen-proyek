@@ -165,8 +165,16 @@ export interface Project {
   backendTech: string;
   databaseTech: string;
   repositoryUrl: string;
+  liveUrl?: string;
   contractAmount?: number;
   payments?: ProjectPayment[];
+  lastHealthStatus?: "online" | "degraded" | "offline" | "unchecked";
+  lastHttpCode?: number;
+  lastResponseTime?: number;
+  sslStatus?: "valid" | "warning" | "expired" | "no_ssl" | "unchecked";
+  sslExpiresAt?: string;
+  sslDaysRemaining?: number;
+  lastCheckedAt?: string;
   credentialUsername?: string;
   credentialPasswordEncrypted?: string;
   credentialPasswordPlain?: string; // Khusus mock demo

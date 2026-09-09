@@ -29,6 +29,10 @@ import {
   Receipt,
   Calendar,
   CheckCircle2,
+  Globe,
+  Activity,
+  RefreshCw,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
@@ -54,6 +58,7 @@ import {
   addProjectPaymentAction,
   deleteProjectPaymentAction,
 } from "@/actions/project-payments";
+import { checkProjectHealthAction } from "@/actions/health-check";
 import { formatRupiah, formatNumberWithDots, parseRupiahInput } from "@/lib/currency";
 import {
   addProjectCredentialAction,
@@ -130,6 +135,11 @@ export default function ProjectDetailPage({
   const [paymentError, setPaymentError] = React.useState("");
   const [paymentToDelete, setPaymentToDelete] = React.useState<ProjectPayment | null>(null);
   const [isDeletingPayment, setIsDeletingPayment] = React.useState(false);
+
+  // Health check monitoring states
+  const [isCheckingHealth, setIsCheckingHealth] = React.useState(false);
+  const [healthCheckMessage, setHealthCheckMessage] = React.useState("");
+  const [healthCheckError, setHealthCheckError] = React.useState("");
 
   const refreshProjectData = React.useCallback(async () => {
     try {
@@ -441,6 +451,42 @@ export default function ProjectDetailPage({
     }
   };
 
+  const handleCheckHealth = async () => {
+    if (!project) return;
+    setIsCheckingHealth(true);
+    setHealthCheckMessage("");
+    setHealthCheckError("");
+    try {
+      const res = await checkProjectHealthAction(project.id);
+      if (res.success && res.result) {
+        setProject((prev) =>
+          prev
+            ? {
+                ...prev,
+                lastHealthStatus: res.result.uptimeStatus,
+                lastHttpCode: res.result.httpCode || undefined,
+                lastResponseTime: res.result.responseTimeMs,
+                sslStatus: res.result.sslStatus,
+                sslExpiresAt: res.result.sslExpiresAt || undefined,
+                sslDaysRemaining: res.result.sslDaysRemaining || undefined,
+                lastCheckedAt: res.result.lastCheckedAt,
+              }
+            : prev
+        );
+        setHealthCheckMessage(
+          `Pemeriksaan selesai: ${res.result.uptimeStatus.toUpperCase()} (${res.result.responseTimeMs} ms, SSL: ${res.result.sslStatus})`
+        );
+        setTimeout(() => setHealthCheckMessage(""), 5000);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Gagal memeriksa kesehatan website";
+      setHealthCheckError(msg);
+      setTimeout(() => setHealthCheckError(""), 5000);
+    } finally {
+      setIsCheckingHealth(false);
+    }
+  };
+
   const sortedNotes = [...project.notes].sort((a, b) => {
     if (a.isPinned === b.isPinned) return 0;
     return a.isPinned ? -1 : 1;
@@ -721,6 +767,212 @@ export default function ProjectDetailPage({
             </Card>
           );
         })()}
+
+        {/* Pemantau Kesehatan Website & SSL Card */}
+        <Card className="border-slate-200 shadow-xs dark:border-slate-800 overflow-hidden">
+          <CardHeader className="p-5 pb-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-zinc-900/40">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                  <Activity className="h-4 w-4" />
+                </div>
+                <div>
+                  <CardTitle className="text-sm font-bold text-slate-900 dark:text-white">
+                    Pemantau Kesehatan Website & SSL (Live Health Check)
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Pantau uptime domain produksi klien, waktu respon latency, dan masa berlaku sertifikat SSL.
+                  </CardDescription>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {project.liveUrl && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleCheckHealth}
+                    disabled={isCheckingHealth}
+                    className="h-8 text-xs gap-1.5"
+                  >
+                    <RefreshCw className={cn("h-3.5 w-3.5", isCheckingHealth && "animate-spin text-blue-600")} />
+                    <span>{isCheckingHealth ? "Memeriksa..." : "Cek Status Sekarang"}</span>
+                  </Button>
+                )}
+              </div>
+            </div>
+          </CardHeader>
+
+          <CardContent className="p-5 space-y-4">
+            {/* Feedback messages */}
+            {healthCheckMessage && (
+              <div className="p-3 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300 text-xs font-semibold flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                <span>{healthCheckMessage}</span>
+              </div>
+            )}
+            {healthCheckError && (
+              <div className="p-3 rounded-lg border border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300 text-xs font-semibold flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+                <span>{healthCheckError}</span>
+              </div>
+            )}
+
+            {!project.liveUrl ? (
+              <div className="rounded-xl border border-dashed border-slate-200 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/30 p-6 text-center space-y-2">
+                <Globe className="h-6 w-6 text-slate-400 mx-auto" />
+                <p className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                  URL Website / Domain Live belum ditentukan untuk proyek ini.
+                </p>
+                <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
+                  Tambahkan alamat domain produksi klien melalui tombol edit agar sistem dapat memantau status aktif dan sertifikat SSL secara otomatis.
+                </p>
+                <Link href={`/projects/${project.id}/edit`}>
+                  <Button variant="outline" size="sm" className="text-xs gap-1.5 mt-1">
+                    <Edit className="h-3.5 w-3.5" />
+                    Atur URL Website Sekarang
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Live URL Link Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Globe className="h-4 w-4 text-blue-600 shrink-0" />
+                    <span className="text-slate-500 font-medium shrink-0">Alamat Domain:</span>
+                    <a
+                      href={project.liveUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-blue-600 dark:text-blue-400 hover:underline font-semibold flex items-center gap-1 truncate"
+                    >
+                      {project.liveUrl}
+                      <ExternalLink className="h-3 w-3 shrink-0" />
+                    </a>
+                  </div>
+                  {project.lastCheckedAt && (
+                    <span className="text-[11px] text-slate-400 shrink-0">
+                      Terakhir dicek:{" "}
+                      {new Date(project.lastCheckedAt).toLocaleDateString("id-ID", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  )}
+                </div>
+
+                {/* 3 Health Metrics */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                  {/* Metric 1: Uptime Status */}
+                  <div className="rounded-xl border border-slate-200/80 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                    <p className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
+                      <Activity className="h-3.5 w-3.5 text-blue-600" />
+                      Status Uptime
+                    </p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <div
+                        className={cn(
+                          "h-2.5 w-2.5 rounded-full",
+                          project.lastHealthStatus === "online"
+                            ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"
+                            : project.lastHealthStatus === "degraded"
+                            ? "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]"
+                            : project.lastHealthStatus === "offline"
+                            ? "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]"
+                            : "bg-slate-300 dark:bg-zinc-700"
+                        )}
+                      />
+                      <span className="font-bold text-sm text-slate-900 dark:text-white">
+                        {project.lastHealthStatus === "online"
+                          ? "Website Online (200 OK)"
+                          : project.lastHealthStatus === "degraded"
+                          ? `Terganggu (${project.lastHttpCode || "4xx/5xx"})`
+                          : project.lastHealthStatus === "offline"
+                          ? "Website Down / Offline"
+                          : "Belum Diperiksa"}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      {project.lastHealthStatus === "online"
+                        ? "Server merespon request normal"
+                        : project.lastHealthStatus === "offline"
+                        ? "Gagal menghubungi server web"
+                        : "Klik tombol cek status untuk ping"}
+                    </p>
+                  </div>
+
+                  {/* Metric 2: Latency */}
+                  <div className="rounded-xl border border-slate-200/80 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                    <p className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
+                      <Clock className="h-3.5 w-3.5 text-purple-600" />
+                      Waktu Respon (Latency)
+                    </p>
+                    <p className="text-lg font-bold text-slate-900 dark:text-white mt-1 font-mono">
+                      {project.lastResponseTime !== undefined && project.lastResponseTime !== null
+                        ? `${project.lastResponseTime} ms`
+                        : "0 ms"}
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      {project.lastResponseTime !== undefined && project.lastResponseTime < 300
+                        ? "Koneksi sangat cepat dan optimal"
+                        : project.lastResponseTime !== undefined
+                        ? "Kecepatan respon tergolong wajar"
+                        : "Belum ada catatan latensi"}
+                    </p>
+                  </div>
+
+                  {/* Metric 3: SSL Status */}
+                  <div
+                    className={cn(
+                      "rounded-xl border p-4",
+                      project.sslStatus === "valid" && (project.sslDaysRemaining === undefined || project.sslDaysRemaining > 30)
+                        ? "border-emerald-200/60 bg-emerald-50/30 dark:border-emerald-900/40 dark:bg-emerald-950/20"
+                        : project.sslStatus === "warning" || (project.sslDaysRemaining !== undefined && project.sslDaysRemaining <= 30 && project.sslDaysRemaining > 7)
+                        ? "border-amber-200/60 bg-amber-50/40 dark:border-amber-900/40 dark:bg-amber-950/20"
+                        : "border-rose-200/60 bg-rose-50/40 dark:border-rose-900/40 dark:bg-rose-950/20"
+                    )}
+                  >
+                    <p className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
+                      <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                      Status Sertifikat SSL
+                    </p>
+                    <div className="mt-1 flex items-center gap-2">
+                      <span
+                        className={cn(
+                          "font-bold text-sm",
+                          project.sslStatus === "valid" && (project.sslDaysRemaining === undefined || project.sslDaysRemaining > 30)
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : project.sslStatus === "warning" || (project.sslDaysRemaining !== undefined && project.sslDaysRemaining <= 30 && project.sslDaysRemaining > 7)
+                            ? "text-amber-600 dark:text-amber-400"
+                            : "text-rose-600 dark:text-rose-400"
+                        )}
+                      >
+                        {project.sslStatus === "valid"
+                          ? "Sertifikat TLS Aman"
+                          : project.sslStatus === "warning"
+                          ? "Peringatan: SSL Segera Habis"
+                          : project.sslStatus === "expired"
+                          ? "Sertifikat SSL Kedaluwarsa!"
+                          : project.sslStatus === "no_ssl"
+                          ? "Tidak Ber-SSL (HTTP Biasa)"
+                          : "Belum Diperiksa"}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      {project.sslDaysRemaining !== undefined && project.sslDaysRemaining !== null
+                        ? `Sisa ${project.sslDaysRemaining} hari masa aktif`
+                        : "Periksa sertifikat untuk detail"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* 2-Column Overview Cards */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
