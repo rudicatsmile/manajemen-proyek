@@ -85,3 +85,71 @@ export async function requireAdmin(): Promise<CurrentUserSession> {
   }
   return user;
 }
+
+/**
+ * Sinkronkan dan ambil user aktif dari tabel `members` Neon PostgreSQL
+ * Menjamin id bertipe UUID valid untuk foreign key relasi database
+ */
+export async function getOrCreateDbMember(): Promise<{
+  id: string;
+  clerkId: string;
+  name: string;
+  email: string;
+  role: "admin" | "member";
+}> {
+  const currentUser = await getCurrentUser();
+  const adminEmail = process.env.INITIAL_ADMIN_EMAIL || "admin@projectku.id";
+
+  try {
+    if (process.env.DATABASE_URL) {
+      const { db } = await import("@/lib/db");
+      const { members } = await import("@/lib/db/schema");
+      const { eq, or } = await import("drizzle-orm");
+
+      const existing = await db
+        .select()
+        .from(members)
+        .where(
+          or(
+            eq(members.clerkId, currentUser.id),
+            eq(members.email, currentUser.email)
+          )
+        )
+        .limit(1);
+
+      if (existing.length > 0) {
+        return existing[0];
+      }
+
+      // Insert member baru jika belum terdaftar
+      const [inserted] = await db
+        .insert(members)
+        .values({
+          clerkId: currentUser.id,
+          name: currentUser.name,
+          email: currentUser.email,
+          role:
+            currentUser.email.toLowerCase() === adminEmail.toLowerCase()
+              ? "admin"
+              : currentUser.role,
+        })
+        .returning();
+
+      if (inserted) {
+        return inserted;
+      }
+    }
+  } catch (err) {
+    console.error("Gagal sinkronisasi member ke Neon DB:", err);
+  }
+
+  // Fallback jika DB offline
+  return {
+    id: "00000000-0000-0000-0000-000000000001",
+    clerkId: currentUser.id,
+    name: currentUser.name,
+    email: currentUser.email,
+    role: currentUser.role,
+  };
+}
+

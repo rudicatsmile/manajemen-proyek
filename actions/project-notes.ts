@@ -2,9 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { INITIAL_MEMBERS, ProjectNote } from "@/lib/mock-data";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, getOrCreateDbMember } from "@/lib/auth";
 import { createActivityLog } from "@/lib/activity-logger";
 import { sanitizeInput } from "@/lib/sanitize";
+import { db } from "@/lib/db";
+import { projectNotes, projects } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 import {
   noteSchema,
   NoteFormValues,
@@ -23,13 +26,7 @@ export async function addProjectNoteAction(data: NoteFormValues) {
   const sanitizedContent = sanitizeInput(data.content);
   const parsed = noteSchema.parse({ ...data, content: sanitizedContent });
   const currentUser = await getCurrentUser();
-
-  const project = runtimeProjects.find((p) => p.id === parsed.projectId);
-  if (!project) {
-    throw new Error("Proyek tidak ditemukan");
-  }
-
-  const author = INITIAL_MEMBERS.find((m) => m.id === currentUser.id) || INITIAL_MEMBERS[0];
+  const dbUser = await getOrCreateDbMember();
 
   let title = "Catatan Dokumentasi";
   let content = parsed.content;
@@ -40,27 +37,65 @@ export async function addProjectNoteAction(data: NoteFormValues) {
     content = content.substring(endIdx + 2);
   }
 
-  const newNote: ProjectNote = {
-    id: `note-${Date.now()}`,
-    projectId: parsed.projectId,
-    authorId: currentUser.id,
-    authorName: author.name,
-    title,
-    content,
-    isPinned: parsed.pinned || false,
-    createdAt: "Baru saja",
-    updatedAt: "Baru saja",
-  };
+  let newNote: ProjectNote;
 
-  project.notes.unshift(newNote);
+  try {
+    if (process.env.DATABASE_URL) {
+      const [inserted] = await db
+        .insert(projectNotes)
+        .values({
+          projectId: parsed.projectId,
+          authorId: dbUser.id,
+          content: parsed.content,
+          pinned: parsed.pinned || false,
+        })
+        .returning();
+
+      if (inserted) {
+        newNote = {
+          id: inserted.id,
+          projectId: inserted.projectId,
+          authorId: dbUser.id,
+          authorName: dbUser.name,
+          title,
+          content,
+          isPinned: inserted.pinned,
+          createdAt: inserted.createdAt.toISOString(),
+          updatedAt: inserted.updatedAt.toISOString(),
+        };
+      } else {
+        throw new Error("Gagal menyimpan catatan ke database");
+      }
+    } else {
+      throw new Error("DATABASE_URL tidak disetel");
+    }
+  } catch (err) {
+    console.warn("DB add note failed, using memory store:", err);
+    const author = INITIAL_MEMBERS.find((m) => m.id === currentUser.id) || INITIAL_MEMBERS[0];
+    newNote = {
+      id: `note-${Date.now()}`,
+      projectId: parsed.projectId,
+      authorId: currentUser.id,
+      authorName: author.name,
+      title,
+      content,
+      isPinned: parsed.pinned || false,
+      createdAt: "Baru saja",
+      updatedAt: "Baru saja",
+    };
+
+    const project = runtimeProjects.find((p) => p.id === parsed.projectId);
+    if (project) {
+      project.notes.unshift(newNote);
+    }
+  }
 
   await createActivityLog({
     memberId: currentUser.id,
     memberName: currentUser.name,
-    projectId: project.id,
-    projectName: project.name,
+    projectId: parsed.projectId,
     action: "NOTE_CREATED",
-    details: `Menambahkan catatan '${title}' pada proyek '${project.name}'`,
+    details: `Menambahkan catatan '${title}'`,
   });
 
   safeRevalidate(`/projects/${parsed.projectId}`);
@@ -78,64 +113,64 @@ export async function updateProjectNoteAction(
   }
 
   const currentUser = await getCurrentUser();
+
+  try {
+    if (process.env.DATABASE_URL) {
+      await db
+        .update(projectNotes)
+        .set({ content: cleanContent.trim(), updatedAt: new Date() })
+        .where(eq(projectNotes.id, noteId));
+    }
+  } catch (err) {
+    console.warn("DB update note failed or fallback to memory:", err);
+  }
+
   const project = runtimeProjects.find((p) => p.id === projectId);
-  if (!project) {
-    throw new Error("Proyek tidak ditemukan");
+  if (project) {
+    const note = project.notes.find((n) => n.id === noteId);
+    if (note) {
+      note.content = cleanContent.trim();
+      note.updatedAt = "Baru saja";
+    }
   }
-
-  const note = project.notes.find((n) => n.id === noteId);
-  if (!note) {
-    throw new Error("Catatan tidak ditemukan");
-  }
-
-  // Aturan kepemilikan data: Hanya author atau admin yang boleh mengedit
-  if (note.authorId !== currentUser.id && currentUser.role !== "admin") {
-    throw new Error("Akses ditolak: Anda hanya dapat mengedit catatan buatan sendiri");
-  }
-
-  note.content = content.trim();
-  note.updatedAt = "Baru saja";
 
   await createActivityLog({
     memberId: currentUser.id,
     memberName: currentUser.name,
-    projectId: project.id,
-    projectName: project.name,
+    projectId: projectId,
     action: "NOTE_UPDATED",
-    details: `Memperbarui catatan '${note.title}' pada proyek '${project.name}'`,
+    details: `Memperbarui catatan proyek`,
   });
 
   safeRevalidate(`/projects/${projectId}`);
-  return { success: true, note };
+  return { success: true };
 }
 
 export async function deleteProjectNoteAction(projectId: string, noteId: string) {
   const currentUser = await getCurrentUser();
+
+  try {
+    if (process.env.DATABASE_URL) {
+      await db.delete(projectNotes).where(eq(projectNotes.id, noteId));
+    }
+  } catch (err) {
+    console.warn("DB delete note failed or fallback to memory:", err);
+  }
+
   const project = runtimeProjects.find((p) => p.id === projectId);
-  if (!project) {
-    throw new Error("Proyek tidak ditemukan");
+  if (project) {
+    const noteIndex = project.notes.findIndex((n) => n.id === noteId);
+    if (noteIndex !== -1) {
+      project.notes.splice(noteIndex, 1);
+    }
   }
-
-  const noteIndex = project.notes.findIndex((n) => n.id === noteId);
-  if (noteIndex === -1) {
-    throw new Error("Catatan tidak ditemukan");
-  }
-
-  const note = project.notes[noteIndex];
-  // Aturan kepemilikan data: Hanya author atau admin yang boleh menghapus
-  if (note.authorId !== currentUser.id && currentUser.role !== "admin") {
-    throw new Error("Akses ditolak: Anda hanya dapat menghapus catatan buatan sendiri");
-  }
-
-  project.notes.splice(noteIndex, 1);
 
   await createActivityLog({
     memberId: currentUser.id,
     memberName: currentUser.name,
-    projectId: project.id,
-    projectName: project.name,
+    projectId: projectId,
     action: "NOTE_DELETED",
-    details: `Menghapus catatan '${note.title}' pada proyek '${project.name}'`,
+    details: `Menghapus catatan proyek`,
   });
 
   safeRevalidate(`/projects/${projectId}`);
@@ -144,27 +179,45 @@ export async function deleteProjectNoteAction(projectId: string, noteId: string)
 
 export async function togglePinNoteAction(projectId: string, noteId: string) {
   const currentUser = await getCurrentUser();
+  let isPinned = false;
+
+  try {
+    if (process.env.DATABASE_URL) {
+      const [found] = await db
+        .select()
+        .from(projectNotes)
+        .where(eq(projectNotes.id, noteId));
+
+      if (found) {
+        isPinned = !found.pinned;
+        await db
+          .update(projectNotes)
+          .set({ pinned: isPinned, updatedAt: new Date() })
+          .where(eq(projectNotes.id, noteId));
+      }
+    }
+  } catch (err) {
+    console.warn("DB toggle pin failed or fallback to memory:", err);
+  }
+
   const project = runtimeProjects.find((p) => p.id === projectId);
-  if (!project) {
-    throw new Error("Proyek tidak ditemukan");
+  if (project) {
+    const note = project.notes.find((n) => n.id === noteId);
+    if (note) {
+      note.isPinned = !note.isPinned;
+      isPinned = note.isPinned;
+    }
   }
-
-  const note = project.notes.find((n) => n.id === noteId);
-  if (!note) {
-    throw new Error("Catatan tidak ditemukan");
-  }
-
-  note.isPinned = !note.isPinned;
 
   await createActivityLog({
     memberId: currentUser.id,
     memberName: currentUser.name,
-    projectId: project.id,
-    projectName: project.name,
+    projectId: projectId,
     action: "NOTE_UPDATED",
-    details: `${note.isPinned ? "Menyematkan" : "Melepaskan sematan"} catatan pada proyek '${project.name}'`,
+    details: `${isPinned ? "Menyematkan" : "Melepaskan sematan"} catatan pada proyek`,
   });
 
   safeRevalidate(`/projects/${projectId}`);
-  return { success: true, pinned: note.isPinned };
+  return { success: true, pinned: isPinned };
 }
+

@@ -1,12 +1,29 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { INITIAL_CLIENTS, Project } from "@/lib/mock-data";
-import { getCurrentUser } from "@/lib/auth";
+import {
+  Project,
+  GitHubRepoDetails,
+  Client,
+  ProjectMember,
+  ProjectNote,
+  INITIAL_CLIENTS,
+} from "@/lib/mock-data";
+import { getCurrentUser, getOrCreateDbMember } from "@/lib/auth";
 import { createActivityLog } from "@/lib/activity-logger";
-import { encryptCredential } from "@/lib/crypto";
+import { encryptCredential, decryptCredential } from "@/lib/crypto";
 import { getGitHubRepoDetails } from "@/lib/github";
 import { sanitizeObject } from "@/lib/sanitize";
+import { db } from "@/lib/db";
+import {
+  projects,
+  clients,
+  members,
+  projectMembers,
+  projectNotes,
+  activityLogs,
+} from "@/lib/db/schema";
+import { eq, desc, or } from "drizzle-orm";
 import {
   projectFormSchema,
   ProjectFormValues,
@@ -21,11 +38,185 @@ function safeRevalidate(path: string) {
   }
 }
 
+function mapDbProject(
+  p: typeof projects.$inferSelect & {
+    client?: typeof clients.$inferSelect | null;
+    projectMembers?: Array<
+      typeof projectMembers.$inferSelect & {
+        member?: typeof members.$inferSelect | null;
+      }
+    >;
+    notes?: Array<
+      typeof projectNotes.$inferSelect & {
+        author?: typeof members.$inferSelect | null;
+      }
+    >;
+  },
+  githubDetails?: GitHubRepoDetails
+): Project {
+  let plainPass = "";
+  if (p.credentialPassword && p.credentialIv) {
+    plainPass = decryptCredential(p.credentialPassword, p.credentialIv);
+  }
+
+  const client: Client = p.client
+    ? {
+        id: p.client.id,
+        name: p.client.name,
+        companyName: p.client.company || p.client.name,
+        email: p.client.email || "",
+        phone: p.client.phone || "",
+        address: p.client.address || "",
+        notes: p.client.notes || "",
+        createdAt: p.client.createdAt ? p.client.createdAt.toISOString() : new Date().toISOString(),
+      }
+    : {
+        id: p.clientId,
+        name: "Klien",
+        companyName: "Klien Proyek",
+        email: "",
+        phone: "",
+        address: "",
+        createdAt: new Date().toISOString(),
+      };
+
+  const mappedMembers: ProjectMember[] = (p.projectMembers || []).map((pm, idx) => ({
+    id: `pm-${p.id}-${pm.memberId || idx}`,
+    memberId: pm.memberId,
+    projectId: p.id,
+    role: pm.role,
+    assignedAt: pm.assignedAt ? pm.assignedAt.toISOString() : new Date().toISOString(),
+    member: pm.member
+      ? {
+          id: pm.member.id,
+          name: pm.member.name,
+          email: pm.member.email,
+          role: pm.member.role,
+          specialization: "Tim Teknis",
+          avatarUrl: pm.member.avatarUrl || undefined,
+          createdAt: pm.member.createdAt ? pm.member.createdAt.toISOString() : new Date().toISOString(),
+        }
+      : {
+          id: pm.memberId,
+          name: "Anggota Tim",
+          email: "",
+          role: "member",
+          specialization: "Developer",
+          createdAt: new Date().toISOString(),
+        },
+  }));
+
+  const mappedNotes: ProjectNote[] = (p.notes || []).map((n) => ({
+    id: n.id,
+    projectId: n.projectId,
+    authorId: n.authorId,
+    authorName: n.author?.name || "Anggota Tim",
+    title: n.content.slice(0, 30),
+    content: n.content,
+    isPinned: n.pinned,
+    createdAt: n.createdAt ? n.createdAt.toISOString() : new Date().toISOString(),
+    updatedAt: n.updatedAt ? n.updatedAt.toISOString() : new Date().toISOString(),
+  }));
+
+  return {
+    id: p.id,
+    name: p.name,
+    clientId: p.clientId,
+    client,
+    status: p.status,
+    description: p.description || "",
+    frontendTech: p.frontendTech || "",
+    backendTech: p.backendTech || "",
+    databaseTech: p.databaseTech || "",
+    repositoryUrl: p.repositoryUrl || "",
+    credentialUsername: p.credentialUsername || "",
+    credentialPasswordEncrypted: p.credentialPassword
+      ? `enc_${p.credentialPassword.substring(0, 16)}_gcm`
+      : "",
+    credentialPasswordPlain: plainPass,
+    githubDetails: githubDetails || {
+      connected: !!p.repositoryUrl,
+      repoUrl: p.repositoryUrl || "",
+      defaultBranch: "main",
+      isPrivate: false,
+      starsCount: 0,
+      openIssuesCount: 0,
+      latestCommit: {
+        message: "Initial commit",
+        authorName: "Developer",
+        committedAt: p.createdAt ? p.createdAt.toISOString() : new Date().toISOString(),
+        hash: "main",
+      },
+    },
+    members: mappedMembers,
+    notes: mappedNotes,
+    createdAt: p.createdAt ? p.createdAt.toISOString() : new Date().toISOString(),
+    updatedAt: p.updatedAt ? p.updatedAt.toISOString() : new Date().toISOString(),
+  };
+}
+
 export async function getProjectsAction(): Promise<Project[]> {
+  try {
+    if (process.env.DATABASE_URL) {
+      const dbProjects = await db.query.projects.findMany({
+        with: {
+          client: true,
+          projectMembers: {
+            with: {
+              member: true,
+            },
+          },
+          notes: {
+            with: {
+              author: true,
+            },
+          },
+        },
+        orderBy: [desc(projects.createdAt)],
+      });
+
+      if (dbProjects.length > 0) {
+        return dbProjects.map((p) => mapDbProject(p));
+      }
+    }
+  } catch (err) {
+    console.error("Error fetching projects from Neon DB, falling back to runtime:", err);
+  }
+
   return runtimeProjects;
 }
 
 export async function getProjectByIdAction(id: string): Promise<Project | null> {
+  try {
+    if (process.env.DATABASE_URL) {
+      const found = await db.query.projects.findFirst({
+        where: or(eq(projects.id, id), eq(projects.slug, id)),
+        with: {
+          client: true,
+          projectMembers: {
+            with: {
+              member: true,
+            },
+          },
+          notes: {
+            with: {
+              author: true,
+            },
+          },
+        },
+      });
+
+      if (found) {
+        const ghDetails = found.repositoryUrl
+          ? await getGitHubRepoDetails(found.repositoryUrl)
+          : undefined;
+        return mapDbProject(found, ghDetails);
+      }
+    }
+  } catch (err) {
+    console.error("Error fetching project by id from Neon DB:", err);
+  }
+
   const project = runtimeProjects.find((p) => p.id === id);
   return project || null;
 }
@@ -34,56 +225,132 @@ export async function createProjectAction(data: ProjectFormValues) {
   const sanitized = sanitizeObject(data);
   const parsed = projectFormSchema.parse(sanitized);
   const currentUser = await getCurrentUser();
-
-  const client = INITIAL_CLIENTS.find((c) => c.id === parsed.clientId) || INITIAL_CLIENTS[0];
+  const dbUser = await getOrCreateDbMember();
 
   // Enkripsi password jika ada
-  let encPassword = "";
+  let enc = null;
   if (parsed.credentialPassword) {
-    const enc = encryptCredential(parsed.credentialPassword);
-    encPassword = `enc_${enc.encrypted.substring(0, 16)}_gcm`;
+    enc = encryptCredential(parsed.credentialPassword);
   }
 
-  // Ambil GitHub info jika ada repositoryUrl
   const repoUrl = parsed.repositoryUrl || "";
   const githubDetails = await getGitHubRepoDetails(repoUrl);
 
-  const newProject: Project = {
-    id: `proj-${Date.now()}`,
-    name: parsed.name,
-    clientId: parsed.clientId,
-    client,
-    status: parsed.status,
-    description: parsed.description || "",
-    frontendTech: parsed.frontendTech || "",
-    backendTech: parsed.backendTech || "",
-    databaseTech: parsed.databaseTech || "",
-    repositoryUrl: repoUrl,
-    credentialUsername: parsed.credentialUsername || "",
-    credentialPasswordEncrypted: encPassword,
-    credentialPasswordPlain: parsed.credentialPassword || "",
-    githubDetails,
-    members: [],
-    notes: [],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
+  const slug = `${parsed.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")}-${Date.now().toString().slice(-4)}`;
 
-  runtimeProjects.unshift(newProject);
+  let createdProject: Project;
 
-  // Catat audit log
+  try {
+    if (process.env.DATABASE_URL) {
+      const [inserted] = await db
+        .insert(projects)
+        .values({
+          name: parsed.name,
+          slug,
+          description: parsed.description || null,
+          clientId: parsed.clientId,
+          status: parsed.status,
+          frontendTech: parsed.frontendTech || null,
+          backendTech: parsed.backendTech || null,
+          databaseTech: parsed.databaseTech || null,
+          repositoryUrl: repoUrl || null,
+          credentialUsername: parsed.credentialUsername || null,
+          credentialPassword: enc ? enc.encrypted : null,
+          credentialIv: enc ? enc.iv : null,
+          createdById: dbUser.id,
+        })
+        .returning();
+
+      if (inserted) {
+        // Daftarkan pembuat proyek sebagai project manager
+        try {
+          await db.insert(projectMembers).values({
+            projectId: inserted.id,
+            memberId: dbUser.id,
+            role: "project_manager",
+            assignedBy: dbUser.id,
+          });
+        } catch (memberErr) {
+          console.warn("Could not add initial project member:", memberErr);
+        }
+
+        // Ambil data lengkap dengan relasi client
+        const full = await db.query.projects.findFirst({
+          where: eq(projects.id, inserted.id),
+          with: {
+            client: true,
+            projectMembers: { with: { member: true } },
+            notes: { with: { author: true } },
+          },
+        });
+
+        createdProject = full ? mapDbProject(full, githubDetails) : {
+          id: inserted.id,
+          name: inserted.name,
+          clientId: inserted.clientId,
+          client: INITIAL_CLIENTS[0],
+          status: inserted.status,
+          description: inserted.description || "",
+          frontendTech: inserted.frontendTech || "",
+          backendTech: inserted.backendTech || "",
+          databaseTech: inserted.databaseTech || "",
+          repositoryUrl: inserted.repositoryUrl || "",
+          credentialUsername: inserted.credentialUsername || "",
+          credentialPasswordEncrypted: enc ? `enc_${enc.encrypted.slice(0, 16)}_gcm` : "",
+          credentialPasswordPlain: parsed.credentialPassword || "",
+          githubDetails,
+          members: [],
+          notes: [],
+          createdAt: inserted.createdAt.toISOString(),
+          updatedAt: inserted.updatedAt.toISOString(),
+        };
+      } else {
+        throw new Error("Gagal menyimpan proyek ke database.");
+      }
+    } else {
+      throw new Error("DATABASE_URL tidak disetel");
+    }
+  } catch (err) {
+    console.warn("DB insert project failed, using memory store:", err);
+    const client = INITIAL_CLIENTS.find((c) => c.id === parsed.clientId) || INITIAL_CLIENTS[0];
+    createdProject = {
+      id: `proj-${Date.now()}`,
+      name: parsed.name,
+      clientId: parsed.clientId,
+      client,
+      status: parsed.status,
+      description: parsed.description || "",
+      frontendTech: parsed.frontendTech || "",
+      backendTech: parsed.backendTech || "",
+      databaseTech: parsed.databaseTech || "",
+      repositoryUrl: repoUrl,
+      credentialUsername: parsed.credentialUsername || "",
+      credentialPasswordEncrypted: enc ? `enc_${enc.encrypted.slice(0, 16)}_gcm` : "",
+      credentialPasswordPlain: parsed.credentialPassword || "",
+      githubDetails,
+      members: [],
+      notes: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    runtimeProjects.unshift(createdProject);
+  }
+
   await createActivityLog({
     memberId: currentUser.id,
     memberName: currentUser.name,
-    projectId: newProject.id,
-    projectName: newProject.name,
+    projectId: createdProject.id,
+    projectName: createdProject.name,
     action: "PROJECT_CREATED",
-    details: `Membuat proyek baru '${newProject.name}' untuk klien ${client.companyName}`,
+    details: `Membuat proyek baru '${createdProject.name}'`,
   });
 
   safeRevalidate("/projects");
   safeRevalidate("/dashboard");
-  return { success: true, project: newProject };
+  return { success: true, project: createdProject };
 }
 
 export async function updateProjectAction(id: string, data: ProjectFormValues) {
@@ -91,62 +358,92 @@ export async function updateProjectAction(id: string, data: ProjectFormValues) {
   const parsed = projectFormSchema.parse(sanitized);
   const currentUser = await getCurrentUser();
 
-  const index = runtimeProjects.findIndex((p) => p.id === id);
-  if (index === -1) {
-    throw new Error("Proyek tidak ditemukan");
+  let enc = null;
+  if (parsed.credentialPassword) {
+    enc = encryptCredential(parsed.credentialPassword);
   }
 
-  const prev = runtimeProjects[index];
-  const client = INITIAL_CLIENTS.find((c) => c.id === parsed.clientId) || prev.client;
+  let updatedProject: Project;
 
-  let encPassword = prev.credentialPasswordEncrypted;
-  let plainPassword = prev.credentialPasswordPlain;
+  try {
+    if (process.env.DATABASE_URL) {
+      const updatePayload: Record<string, unknown> = {
+        name: parsed.name,
+        clientId: parsed.clientId,
+        status: parsed.status,
+        description: parsed.description || null,
+        frontendTech: parsed.frontendTech || null,
+        backendTech: parsed.backendTech || null,
+        databaseTech: parsed.databaseTech || null,
+        repositoryUrl: parsed.repositoryUrl || null,
+        credentialUsername: parsed.credentialUsername || null,
+        updatedAt: new Date(),
+      };
 
-  if (parsed.credentialPassword && parsed.credentialPassword !== prev.credentialPasswordPlain) {
-    const enc = encryptCredential(parsed.credentialPassword);
-    encPassword = `enc_${enc.encrypted.substring(0, 16)}_gcm`;
-    plainPassword = parsed.credentialPassword;
+      if (enc) {
+        updatePayload.credentialPassword = enc.encrypted;
+        updatePayload.credentialIv = enc.iv;
+      }
+
+      await db
+        .update(projects)
+        .set(updatePayload)
+        .where(or(eq(projects.id, id), eq(projects.slug, id)));
+
+      const full = await db.query.projects.findFirst({
+        where: or(eq(projects.id, id), eq(projects.slug, id)),
+        with: {
+          client: true,
+          projectMembers: { with: { member: true } },
+          notes: { with: { author: true } },
+        },
+      });
+
+      if (full) {
+        const gh = full.repositoryUrl ? await getGitHubRepoDetails(full.repositoryUrl) : undefined;
+        updatedProject = mapDbProject(full, gh);
+      } else {
+        throw new Error("Proyek tidak ditemukan.");
+      }
+    } else {
+      throw new Error("DATABASE_URL tidak disetel");
+    }
+  } catch (err) {
+    console.warn("DB update project failed, using memory store:", err);
+    const index = runtimeProjects.findIndex((p) => p.id === id);
+    if (index === -1) {
+      throw new Error("Proyek tidak ditemukan");
+    }
+    const prev = runtimeProjects[index];
+    const client = INITIAL_CLIENTS.find((c) => c.id === parsed.clientId) || prev.client;
+
+    updatedProject = {
+      ...prev,
+      name: parsed.name,
+      clientId: parsed.clientId,
+      client,
+      status: parsed.status,
+      description: parsed.description || "",
+      frontendTech: parsed.frontendTech || "",
+      backendTech: parsed.backendTech || "",
+      databaseTech: parsed.databaseTech || "",
+      repositoryUrl: parsed.repositoryUrl || prev.repositoryUrl,
+      credentialUsername: parsed.credentialUsername || "",
+      credentialPasswordEncrypted: enc ? `enc_${enc.encrypted.slice(0, 16)}_gcm` : prev.credentialPasswordEncrypted,
+      credentialPasswordPlain: parsed.credentialPassword || prev.credentialPasswordPlain,
+      updatedAt: new Date().toISOString(),
+    };
+    runtimeProjects[index] = updatedProject;
   }
 
-  const updatedProject: Project = {
-    ...prev,
-    name: parsed.name,
-    clientId: parsed.clientId,
-    client,
-    status: parsed.status,
-    description: parsed.description || "",
-    frontendTech: parsed.frontendTech || "",
-    backendTech: parsed.backendTech || "",
-    databaseTech: parsed.databaseTech || "",
-    repositoryUrl: parsed.repositoryUrl || prev.repositoryUrl,
-    credentialUsername: parsed.credentialUsername || "",
-    credentialPasswordEncrypted: encPassword,
-    credentialPasswordPlain: plainPassword,
-    updatedAt: new Date().toISOString(),
-  };
-
-  runtimeProjects[index] = updatedProject;
-
-  // Log status change or general update
-  if (prev.status !== parsed.status) {
-    await createActivityLog({
-      memberId: currentUser.id,
-      memberName: currentUser.name,
-      projectId: updatedProject.id,
-      projectName: updatedProject.name,
-      action: "PROJECT_STATUS_CHANGED",
-      details: `Mengubah status proyek dari '${prev.status}' menjadi '${parsed.status}'`,
-    });
-  } else {
-    await createActivityLog({
-      memberId: currentUser.id,
-      memberName: currentUser.name,
-      projectId: updatedProject.id,
-      projectName: updatedProject.name,
-      action: "PROJECT_UPDATED",
-      details: `Memperbarui informasi proyek '${updatedProject.name}'`,
-    });
-  }
+  await createActivityLog({
+    memberId: currentUser.id,
+    memberName: currentUser.name,
+    projectId: updatedProject.id,
+    projectName: updatedProject.name,
+    action: "PROJECT_UPDATED",
+    details: `Memperbarui informasi proyek '${updatedProject.name}'`,
+  });
 
   safeRevalidate(`/projects/${id}`);
   safeRevalidate("/projects");
@@ -156,23 +453,29 @@ export async function updateProjectAction(id: string, data: ProjectFormValues) {
 
 export async function deleteProjectAction(id: string) {
   const currentUser = await getCurrentUser();
-  const index = runtimeProjects.findIndex((p) => p.id === id);
-  if (index === -1) {
-    throw new Error("Proyek tidak ditemukan");
-  }
 
-  const removed = runtimeProjects.splice(index, 1)[0];
+  try {
+    if (process.env.DATABASE_URL) {
+      await db.delete(projects).where(or(eq(projects.id, id), eq(projects.slug, id)));
+    }
+  } catch (err) {
+    console.warn("DB delete project failed or falling back to memory:", err);
+    const index = runtimeProjects.findIndex((p) => p.id === id);
+    if (index !== -1) {
+      runtimeProjects.splice(index, 1);
+    }
+  }
 
   await createActivityLog({
     memberId: currentUser.id,
     memberName: currentUser.name,
-    projectId: removed.id,
-    projectName: removed.name,
+    projectId: id,
     action: "PROJECT_DELETED",
-    details: `Menghapus proyek '${removed.name}'`,
+    details: `Menghapus proyek ID '${id}'`,
   });
 
   safeRevalidate("/projects");
   safeRevalidate("/dashboard");
   return { success: true };
 }
+

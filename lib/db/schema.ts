@@ -194,3 +194,22 @@ export const projectNotesRelations = relations(projectNotes, ({ one }) => ({
     references: [members.id],
   }),
 }));
+
+export const clientsRelations = relations(clients, ({ many }) => ({
+  projects: many(projects),
+}));
+
+export const membersRelations = relations(members, ({ many }) => ({
+  createdProjects: many(projects),
+  projectMemberships: many(projectMembers),
+  notes: many(projectNotes),
+  activityLogs: many(activityLogs),
+}));
+
+export const activityLogsRelations = relations(activityLogs, ({ one }) => ({
+  actor: one(members, {
+    fields: [activityLogs.actorId],
+    references: [members.id],
+  }),
+}));
+
