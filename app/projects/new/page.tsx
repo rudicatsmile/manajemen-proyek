@@ -16,6 +16,7 @@ import {
   Plus,
   Trash2,
   KeyRound,
+  Banknote,
 } from "lucide-react";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Client, INITIAL_CLIENTS, ProjectStatus } from "@/lib/mock-data";
 import { createProjectAction } from "@/actions/projects";
 import { getClientsAction } from "@/actions/clients";
+import { formatNumberWithDots, parseRupiahInput } from "@/lib/currency";
 
 export default function CreateProjectPage() {
   const router = useRouter();
@@ -37,6 +39,7 @@ export default function CreateProjectPage() {
   const [backendTech, setBackendTech] = React.useState("NestJS, REST API");
   const [databaseTech, setDatabaseTech] = React.useState("PostgreSQL");
   const [repositoryUrl, setRepositoryUrl] = React.useState("https://github.com/");
+  const [contractAmountInput, setContractAmountInput] = React.useState("");
   const [credentialsList, setCredentialsList] = React.useState<
     Array<{
       id: string;
@@ -137,6 +140,7 @@ export default function CreateProjectPage() {
         backendTech,
         databaseTech,
         repositoryUrl,
+        contractAmount: parseRupiahInput(contractAmountInput),
         credentialUsername: validCredentials[0]?.username || "",
         credentialPassword: validCredentials[0]?.password || "",
         credentials: validCredentials,
@@ -259,6 +263,33 @@ export default function CreateProjectPage() {
                   placeholder="Jelaskan tujuan software, ruang lingkup pengerjaan, atau fitur utama..."
                   className="w-full rounded-lg border border-slate-300 bg-white p-3 text-xs text-slate-900 shadow-xs focus:outline-none focus:ring-2 focus:ring-blue-600 dark:border-slate-700 dark:bg-zinc-900 dark:text-slate-100"
                 />
+              </div>
+
+              {/* Input Nilai Kontrak */}
+              <div className="space-y-1.5 pt-1">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <Banknote className="h-4 w-4 text-emerald-600" />
+                  Nilai Kontrak Proyek (Rupiah)
+                </label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-xs font-bold text-slate-400 dark:text-slate-500">
+                    Rp
+                  </span>
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    value={contractAmountInput}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/\D/g, "");
+                      setContractAmountInput(raw ? formatNumberWithDots(raw) : "");
+                    }}
+                    placeholder="Contoh: 25.000.000"
+                    className="pl-10 font-medium"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Opsional. Format ribuan otomatis. Pembayaran bertahap (DP, termin) dapat dicatat di halaman detail proyek.
+                </p>
               </div>
             </CardContent>
           </Card>

@@ -8,6 +8,7 @@ import {
   ProjectMember,
   ProjectNote,
   ProjectCredential,
+  ProjectPayment,
   INITIAL_CLIENTS,
 } from "@/lib/mock-data";
 import { getCurrentUser, getOrCreateDbMember } from "@/lib/auth";
@@ -23,6 +24,7 @@ import {
   projectMembers,
   projectNotes,
   projectCredentials,
+  projectPayments,
   activityLogs,
 } from "@/lib/db/schema";
 import { eq, desc, or, and } from "drizzle-orm";
@@ -54,6 +56,7 @@ function mapDbProject(
       }
     >;
     credentials?: Array<typeof projectCredentials.$inferSelect>;
+    payments?: Array<typeof projectPayments.$inferSelect>;
   },
   githubDetails?: GitHubRepoDetails
 ): Project {
@@ -119,6 +122,15 @@ function mapDbProject(
     isPinned: n.pinned,
     createdAt: n.createdAt ? n.createdAt.toISOString() : new Date().toISOString(),
     updatedAt: n.updatedAt ? n.updatedAt.toISOString() : new Date().toISOString(),
+  }));
+
+  const mappedPayments: ProjectPayment[] = (p.payments || []).map((pm) => ({
+    id: pm.id,
+    projectId: pm.projectId,
+    amount: parseFloat(pm.amount),
+    paymentDate: pm.paymentDate ? pm.paymentDate.toISOString() : new Date().toISOString(),
+    note: pm.note || undefined,
+    createdAt: pm.createdAt ? pm.createdAt.toISOString() : new Date().toISOString(),
   }));
 
   const mappedCredentials: ProjectCredential[] = (p.credentials || []).map((c) => {
@@ -189,6 +201,8 @@ function mapDbProject(
     },
     members: mappedMembers,
     notes: mappedNotes,
+    contractAmount: p.contractAmount ? parseFloat(p.contractAmount) : 0,
+    payments: mappedPayments,
     createdAt: p.createdAt ? p.createdAt.toISOString() : new Date().toISOString(),
     updatedAt: p.updatedAt ? p.updatedAt.toISOString() : new Date().toISOString(),
   };
@@ -211,6 +225,9 @@ export async function getProjectsAction(): Promise<Project[]> {
             },
           },
           credentials: true,
+          payments: {
+            orderBy: [desc(projectPayments.paymentDate)],
+          },
         },
         orderBy: [desc(projects.createdAt)],
       });
@@ -244,6 +261,9 @@ export async function getProjectByIdAction(id: string): Promise<Project | null> 
             },
           },
           credentials: true,
+          payments: {
+            orderBy: [desc(projectPayments.paymentDate)],
+          },
         },
       });
 
@@ -298,6 +318,7 @@ export async function createProjectAction(data: ProjectFormValues) {
           backendTech: parsed.backendTech || null,
           databaseTech: parsed.databaseTech || null,
           repositoryUrl: repoUrl || null,
+          contractAmount: parsed.contractAmount ? parsed.contractAmount.toString() : null,
           credentialUsername: parsed.credentialUsername || null,
           credentialPassword: enc ? enc.encrypted : null,
           credentialIv: enc ? enc.iv : null,
@@ -459,6 +480,7 @@ export async function updateProjectAction(id: string, data: ProjectFormValues) {
         backendTech: parsed.backendTech || null,
         databaseTech: parsed.databaseTech || null,
         repositoryUrl: parsed.repositoryUrl || null,
+        contractAmount: parsed.contractAmount !== undefined ? (parsed.contractAmount ? parsed.contractAmount.toString() : null) : undefined,
         credentialUsername: parsed.credentialUsername || null,
         updatedAt: new Date(),
       };
@@ -566,6 +588,7 @@ export async function updateProjectAction(id: string, data: ProjectFormValues) {
       backendTech: parsed.backendTech || "",
       databaseTech: parsed.databaseTech || "",
       repositoryUrl: parsed.repositoryUrl || prev.repositoryUrl,
+      contractAmount: parsed.contractAmount !== undefined ? parsed.contractAmount : prev.contractAmount,
       credentialUsername: parsed.credentialUsername || "",
       credentialPasswordEncrypted: enc ? `enc_${enc.encrypted.slice(0, 16)}_gcm` : prev.credentialPasswordEncrypted,
       credentialPasswordPlain: parsed.credentialPassword || prev.credentialPasswordPlain,

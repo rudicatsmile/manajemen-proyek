@@ -36,6 +36,7 @@ export const projectFormSchema = z.object({
   backendTech: z.string().optional(),
   databaseTech: z.string().optional(),
   repositoryUrl: z.string().optional(),
+  contractAmount: z.number().optional().default(0),
   credentialUsername: z.string().optional(),
   credentialPassword: z.string().optional(),
   credentials: z.array(projectCredentialInputSchema).optional(),

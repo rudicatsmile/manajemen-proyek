@@ -16,7 +16,10 @@ import {
   Trash2,
   CheckCircle2,
   AlertCircle,
+  Banknote,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { formatRupiah } from "@/lib/currency";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -315,6 +318,66 @@ export default function ProjectsPage() {
                     <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-2">
                       {project.description}
                     </p>
+
+                    {/* Financial summary bar */}
+                    {(() => {
+                      const contract = project.contractAmount || 0;
+                      const payments = project.payments || [];
+                      const paid = payments.reduce((sum, p) => sum + p.amount, 0);
+                      const remaining = Math.max(0, contract - paid);
+                      const percent =
+                        contract > 0
+                          ? Math.min(100, Math.round((paid / contract) * 100))
+                          : 0;
+
+                      return (
+                        <div className="flex items-center justify-between flex-wrap gap-2 py-2 px-3 rounded-lg bg-slate-50/80 dark:bg-zinc-900/60 border border-slate-100 dark:border-slate-800/80 text-xs">
+                          <div className="flex items-center gap-2">
+                            <Banknote className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                            <span className="text-slate-500 font-medium">Kontrak:</span>
+                            <span className="font-bold text-slate-800 dark:text-slate-200">
+                              {contract > 0 ? formatRupiah(contract) : "Belum diatur"}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2.5">
+                            {contract > 0 ? (
+                              <>
+                                <div className="flex items-center gap-1 text-[11px]">
+                                  <span className="text-slate-400">Terbayar:</span>
+                                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                                    {formatRupiah(paid)}
+                                  </span>
+                                  <span className="text-slate-400 font-mono">({percent}%)</span>
+                                </div>
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold border",
+                                    remaining === 0
+                                      ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
+                                      : paid > 0
+                                      ? "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800"
+                                      : "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
+                                  )}
+                                >
+                                  {remaining === 0
+                                    ? "Lunas"
+                                    : paid > 0
+                                    ? "Sebagian"
+                                    : "Belum Bayar"}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-[11px] text-slate-400">
+                                {payments.length > 0
+                                  ? `${payments.length} pembayaran dicatat`
+                                  : "Belum ada tagihan"}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* Bottom Metadata Bar */}
                     <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">

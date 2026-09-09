@@ -25,7 +25,12 @@ import {
   AlertCircle,
   KeyRound,
   Server,
+  Banknote,
+  Receipt,
+  Calendar,
+  CheckCircle2,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -42,8 +47,14 @@ import {
   ActivityLog,
   CREDENTIAL_TYPE_CONFIG,
   ProjectCredential,
+  ProjectPayment,
 } from "@/lib/mock-data";
 import { getProjectByIdAction, deleteProjectAction } from "@/actions/projects";
+import {
+  addProjectPaymentAction,
+  deleteProjectPaymentAction,
+} from "@/actions/project-payments";
+import { formatRupiah, formatNumberWithDots, parseRupiahInput } from "@/lib/currency";
 import {
   addProjectCredentialAction,
   deleteProjectCredentialAction,
@@ -109,6 +120,16 @@ export default function ProjectDetailPage({
 
   const [credToDelete, setCredToDelete] = React.useState<ProjectCredential | null>(null);
   const [isDeletingCred, setIsDeletingCred] = React.useState(false);
+
+  // Payment states
+  const [addPaymentModalOpen, setAddPaymentModalOpen] = React.useState(false);
+  const [paymentAmountInput, setPaymentAmountInput] = React.useState("");
+  const [paymentDate, setPaymentDate] = React.useState(new Date().toISOString().split("T")[0]);
+  const [paymentNote, setPaymentNote] = React.useState("");
+  const [submittingPayment, setSubmittingPayment] = React.useState(false);
+  const [paymentError, setPaymentError] = React.useState("");
+  const [paymentToDelete, setPaymentToDelete] = React.useState<ProjectPayment | null>(null);
+  const [isDeletingPayment, setIsDeletingPayment] = React.useState(false);
 
   const refreshProjectData = React.useCallback(async () => {
     try {
@@ -370,6 +391,56 @@ export default function ProjectDetailPage({
     }
   };
 
+  const handleAddPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!project) return;
+    const amount = parseRupiahInput(paymentAmountInput);
+    if (amount <= 0) {
+      setPaymentError("Nominal pembayaran harus lebih dari 0");
+      return;
+    }
+
+    setSubmittingPayment(true);
+    setPaymentError("");
+    try {
+      const res = await addProjectPaymentAction({
+        projectId: project.id,
+        amount,
+        paymentDate,
+        note: paymentNote.trim() || undefined,
+      });
+
+      if (res.success) {
+        setAddPaymentModalOpen(false);
+        setPaymentAmountInput("");
+        setPaymentNote("");
+        setPaymentDate(new Date().toISOString().split("T")[0]);
+        refreshProjectData();
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Gagal mencatat pembayaran";
+      setPaymentError(msg);
+    } finally {
+      setSubmittingPayment(false);
+    }
+  };
+
+  const handleDeletePayment = async () => {
+    if (!project || !paymentToDelete) return;
+    setIsDeletingPayment(true);
+    try {
+      const res = await deleteProjectPaymentAction(project.id, paymentToDelete.id);
+      if (res.success) {
+        setPaymentToDelete(null);
+        refreshProjectData();
+      }
+    } catch (err) {
+      console.error("Gagal menghapus riwayat pembayaran:", err);
+    } finally {
+      setIsDeletingPayment(false);
+    }
+  };
+
   const sortedNotes = [...project.notes].sort((a, b) => {
     if (a.isPinned === b.isPinned) return 0;
     return a.isPinned ? -1 : 1;
@@ -451,6 +522,205 @@ export default function ProjectDetailPage({
             </p>
           </CardContent>
         </Card>
+
+        {/* Pelacak Finansial & Pembayaran Proyek Card */}
+        {(() => {
+          const contractAmount = project.contractAmount || 0;
+          const payments = project.payments || [];
+          const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+          const remainingDue = Math.max(0, contractAmount - totalPaid);
+          const percentPaid =
+            contractAmount > 0
+              ? Math.min(100, Math.round((totalPaid / contractAmount) * 100))
+              : 0;
+
+          return (
+            <Card className="border-slate-200 shadow-xs dark:border-slate-800 overflow-hidden">
+              <CardHeader className="p-5 pb-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-zinc-900/40">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                      <Banknote className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-sm font-bold text-slate-900 dark:text-white">
+                        Status Finansial & Pembayaran Proyek
+                      </CardTitle>
+                      <CardDescription className="text-xs">
+                        Nilai kontrak yang disepakati, pembayaran masuk, dan sisa tagihan klien.
+                      </CardDescription>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setPaymentError("");
+                        setAddPaymentModalOpen(true);
+                      }}
+                      className="h-8 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Catat Pembayaran
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+
+              <CardContent className="p-5 space-y-5">
+                {/* 3 Metrics Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                  <div className="rounded-xl border border-slate-200/80 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                    <p className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
+                      <Receipt className="h-3.5 w-3.5 text-slate-400" />
+                      Total Nilai Kontrak
+                    </p>
+                    <p className="text-lg font-bold text-slate-900 dark:text-white mt-1">
+                      {formatRupiah(contractAmount)}
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      {contractAmount > 0
+                        ? "Berdasarkan kesepakatan proyek"
+                        : "Nilai kontrak belum diatur"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-emerald-200/60 bg-emerald-50/40 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+                    <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Sudah Terbayar
+                    </p>
+                    <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-1">
+                      {formatRupiah(totalPaid)}
+                    </p>
+                    <p className="text-[10px] text-emerald-600/80 dark:text-emerald-400/80 mt-0.5">
+                      {contractAmount > 0
+                        ? `${percentPaid}% dari total kontrak`
+                        : `${payments.length} transaksi pembayaran`}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200/80 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                    <p className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
+                      <Clock className="h-3.5 w-3.5 text-amber-500" />
+                      Sisa Tagihan
+                    </p>
+                    <p
+                      className={cn(
+                        "text-lg font-bold mt-1",
+                        remainingDue === 0 && contractAmount > 0
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-amber-600 dark:text-amber-400"
+                      )}
+                    >
+                      {formatRupiah(remainingDue)}
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      {remainingDue === 0 && contractAmount > 0
+                        ? "Tagihan telah lunas sepenuhnya"
+                        : "Belum dilunasi klien"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Progress Bar Pelunasan */}
+                {contractAmount > 0 && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">
+                        Progres Pelunasan
+                      </span>
+                      <span className="font-bold text-slate-900 dark:text-white font-mono">
+                        {percentPaid}%
+                      </span>
+                    </div>
+                    <div className="h-2.5 w-full bg-slate-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                      <div
+                        className={cn(
+                          "h-full transition-all duration-500 rounded-full",
+                          percentPaid >= 100
+                            ? "bg-emerald-500"
+                            : percentPaid > 0
+                            ? "bg-blue-600"
+                            : "bg-slate-300 dark:bg-zinc-700"
+                        )}
+                        style={{ width: `${percentPaid}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Riwayat Pembayaran Masuk List */}
+                <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    Riwayat Pembayaran Masuk ({payments.length})
+                  </h4>
+
+                  {payments.length === 0 ? (
+                    <div className="py-6 text-center rounded-xl border border-dashed border-slate-200 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/30">
+                      <Receipt className="h-6 w-6 text-slate-300 mx-auto mb-1.5" />
+                      <p className="text-xs text-slate-500 font-medium">
+                        Belum ada riwayat pembayaran yang dicatat.
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Klik tombol 'Catat Pembayaran' di atas untuk mendokumentasikan DP atau termin masuk.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-100 dark:divide-zinc-800 rounded-xl border border-slate-100 dark:border-zinc-800 overflow-hidden">
+                      {payments.map((p) => (
+                        <div
+                          key={p.id}
+                          className="flex items-center justify-between p-3 bg-white dark:bg-zinc-900 hover:bg-slate-50/70 dark:hover:bg-zinc-800/50 transition-colors"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="h-8 w-8 rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                              <CheckCircle2 className="h-4 w-4" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-slate-900 dark:text-white">
+                                  {formatRupiah(p.amount)}
+                                </span>
+                                {p.note && (
+                                  <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 rounded">
+                                    {p.note}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1.5">
+                                <Calendar className="h-3 w-3" />
+                                {new Date(p.paymentDate).toLocaleDateString("id-ID", {
+                                  day: "numeric",
+                                  month: "long",
+                                  year: "numeric",
+                                })}
+                                {p.recordedByName && (
+                                  <span>• Dicatat oleh {p.recordedByName}</span>
+                                )}
+                              </p>
+                            </div>
+                          </div>
+
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setPaymentToDelete(p)}
+                            className="h-7 w-7 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                            title="Hapus riwayat pembayaran"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {/* 2-Column Overview Cards */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1258,6 +1528,124 @@ export default function ProjectDetailPage({
               onClick={handleDeleteCredential}
             >
               {isDeletingCred ? "Menghapus..." : "Hapus Kredensial"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal Dialog Catat Pembayaran Masuk */}
+      <Modal
+        isOpen={addPaymentModalOpen}
+        onClose={() => setAddPaymentModalOpen(false)}
+        title="Catat Pembayaran Masuk"
+        description="Dokumentasikan pembayaran yang diterima dari klien (DP, Termin, atau Pelunasan)."
+      >
+        <form onSubmit={handleAddPayment} className="space-y-4 text-xs">
+          {paymentError && (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300">
+              {paymentError}
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <label className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <Banknote className="h-3.5 w-3.5 text-emerald-600" />
+              Nominal Pembayaran (Rp) <span className="text-rose-500">*</span>
+            </label>
+            <div className="relative">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-xs font-bold text-slate-400 dark:text-slate-500">
+                Rp
+              </span>
+              <Input
+                required
+                type="text"
+                inputMode="numeric"
+                value={paymentAmountInput}
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/\D/g, "");
+                  setPaymentAmountInput(raw ? formatNumberWithDots(raw) : "");
+                }}
+                placeholder="Contoh: 10.000.000"
+                className="pl-10 font-medium"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <Calendar className="h-3.5 w-3.5 text-slate-400" />
+              Tanggal Pembayaran <span className="text-rose-500">*</span>
+            </label>
+            <Input
+              required
+              type="date"
+              value={paymentDate}
+              onChange={(e) => setPaymentDate(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="font-semibold text-slate-700 dark:text-slate-300">
+              Keterangan / Termin (Opsional)
+            </label>
+            <Input
+              value={paymentNote}
+              onChange={(e) => setPaymentNote(e.target.value)}
+              placeholder="Contoh: Uang Muka DP 30%, Termin 1 Tahap Pengembangan, Pelunasan"
+            />
+          </div>
+
+          <div className="pt-2 flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setAddPaymentModalOpen(false)}
+            >
+              Batal
+            </Button>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={submittingPayment}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              {submittingPayment ? "Menyimpan..." : "Simpan Pembayaran"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Dialog Konfirmasi Hapus Pembayaran */}
+      <Modal
+        isOpen={!!paymentToDelete}
+        onClose={() => setPaymentToDelete(null)}
+        title="Konfirmasi Hapus Pembayaran"
+        description={`Apakah Anda yakin ingin menghapus catatan pembayaran sebesar ${
+          paymentToDelete ? formatRupiah(paymentToDelete.amount) : ""
+        }?`}
+      >
+        <div className="space-y-4 text-xs text-slate-600 dark:text-slate-300">
+          <p>
+            Tindakan ini akan menghapus catatan pembayaran dari database dan otomatis mengoreksi kembali total pembayaran serta sisa tagihan proyek.
+          </p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setPaymentToDelete(null)}
+            >
+              Batal
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              size="sm"
+              disabled={isDeletingPayment}
+              onClick={handleDeletePayment}
+            >
+              {isDeletingPayment ? "Menghapus..." : "Hapus Pembayaran"}
             </Button>
           </div>
         </div>

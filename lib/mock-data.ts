@@ -144,6 +144,16 @@ export const CREDENTIAL_TYPE_CONFIG: Record<
   },
 };
 
+export interface ProjectPayment {
+  id: string;
+  projectId: string;
+  amount: number;
+  paymentDate: string;
+  note?: string;
+  recordedByName?: string;
+  createdAt: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -155,6 +165,8 @@ export interface Project {
   backendTech: string;
   databaseTech: string;
   repositoryUrl: string;
+  contractAmount?: number;
+  payments?: ProjectPayment[];
   credentialUsername?: string;
   credentialPasswordEncrypted?: string;
   credentialPasswordPlain?: string; // Khusus mock demo

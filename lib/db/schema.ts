@@ -10,6 +10,7 @@ import {
   primaryKey,
   uniqueIndex,
   index,
+  numeric,
 } from "drizzle-orm/pg-core";
 
 export const projectStatusEnum = pgEnum("project_status", [
@@ -87,6 +88,7 @@ export const projects = pgTable(
     backendTech: text("backend_tech"),
     databaseTech: text("database_tech"),
     repositoryUrl: text("repository_url"),
+    contractAmount: numeric("contract_amount"),
     credentialUsername: text("credential_username"),
     credentialPassword: text("credential_password"),
     credentialIv: text("credential_iv"),
@@ -163,6 +165,24 @@ export const projectCredentials = pgTable(
   (table) => [index("project_credentials_project_idx").on(table.projectId)]
 );
 
+export const projectPayments = pgTable(
+  "project_payments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    amount: numeric("amount").notNull(),
+    paymentDate: timestamp("payment_date").notNull().defaultNow(),
+    note: text("note"),
+    recordedById: uuid("recorded_by_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("project_payments_project_idx").on(table.projectId)]
+);
+
 export const activityLogs = pgTable(
   "activity_logs",
   {
@@ -194,6 +214,18 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   projectMembers: many(projectMembers),
   notes: many(projectNotes),
   credentials: many(projectCredentials),
+  payments: many(projectPayments),
+}));
+
+export const projectPaymentsRelations = relations(projectPayments, ({ one }) => ({
+  project: one(projects, {
+    fields: [projectPayments.projectId],
+    references: [projects.id],
+  }),
+  recordedBy: one(members, {
+    fields: [projectPayments.recordedById],
+    references: [members.id],
+  }),
 }));
 
 export const projectCredentialsRelations = relations(projectCredentials, ({ one }) => ({
