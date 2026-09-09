@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { FolderKanban, Menu, X, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
 
 export function PublicNavbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
@@ -50,17 +51,28 @@ export function PublicNavbar() {
 
         {/* Action Button */}
         <div className="hidden md:flex items-center gap-3">
-          <Link href="/sign-in">
-            <Button variant="ghost" size="sm">
-              Masuk
-            </Button>
-          </Link>
-          <Link href="/dashboard">
-            <Button size="sm" className="gap-1.5">
-              Buka Dasbor
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-          </Link>
+          <SignedOut>
+            <Link href="/sign-in">
+              <Button variant="ghost" size="sm">
+                Masuk
+              </Button>
+            </Link>
+            <Link href="/sign-in">
+              <Button size="sm" className="gap-1.5">
+                Buka Dasbor
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </Link>
+          </SignedOut>
+          <SignedIn>
+            <Link href="/dashboard">
+              <Button size="sm" className="gap-1.5">
+                Buka Dasbor
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </Link>
+            <UserButton afterSignOutUrl="/" />
+          </SignedIn>
         </div>
 
         {/* Mobile Hamburger Toggle */}

@@ -11,6 +11,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { UserButton, useUser } from "@clerk/nextjs";
 
 const NAV_ITEMS = [
   {
@@ -42,6 +43,7 @@ interface DashboardSidebarProps {
 
 export function DashboardSidebar({ onNavClick, className }: DashboardSidebarProps) {
   const pathname = usePathname();
+  const { user, isLoaded } = useUser();
 
   return (
     <aside
@@ -104,26 +106,23 @@ export function DashboardSidebar({ onNavClick, className }: DashboardSidebarProp
 
       {/* User Profile & Logout */}
       <div className="border-t border-slate-200 p-4 dark:border-slate-800">
-        <div className="flex items-center gap-3 rounded-lg bg-slate-50 p-3 dark:bg-zinc-900/60">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 font-semibold text-white text-xs">
-            RP
-          </div>
+        <div className="flex items-center gap-3 rounded-lg bg-slate-50 p-2.5 dark:bg-zinc-900/60">
+          <UserButton
+            appearance={{
+              elements: {
+                avatarBox: "h-9 w-9",
+              },
+            }}
+          />
           <div className="flex flex-col min-w-0 flex-1">
             <span className="truncate text-xs font-semibold text-slate-900 dark:text-white">
-              Rian Pratama
+              {isLoaded ? (user?.fullName || user?.primaryEmailAddress?.emailAddress || "Pengguna") : "Memuat..."}
             </span>
             <span className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
               <ShieldCheck className="h-3 w-3" />
-              Admin
+              {user?.primaryEmailAddress?.emailAddress === "admin@projectku.id" ? "Admin" : "Member"}
             </span>
           </div>
-          <Link
-            href="/sign-in"
-            title="Keluar akun"
-            className="rounded p-1.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-zinc-800 dark:hover:text-slate-200 transition-colors"
-          >
-            <LogOut className="h-4 w-4" />
-          </Link>
         </div>
       </div>
     </aside>
