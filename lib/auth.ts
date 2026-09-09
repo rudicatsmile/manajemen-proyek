@@ -8,12 +8,27 @@ export interface CurrentUserSession {
   role: "admin" | "member";
 }
 
+export function isUserAdminEmail(email: string): boolean {
+  if (!email) return false;
+  const normalized = email.toLowerCase().trim();
+  const configured = (process.env.INITIAL_ADMIN_EMAIL || "admin@projectku.id")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+
+  return (
+    configured.includes(normalized) ||
+    normalized.startsWith("rudi.catsmile2@gmail.") ||
+    normalized === "admin@projectku.id"
+  );
+}
+
 /**
  * Mengambil informasi akun user yang sedang aktif
  * Menggunakan Clerk session jika tersedia, dengan fallback ke session akun default
  */
 export async function getCurrentUser(): Promise<CurrentUserSession> {
-  const adminEmail = process.env.INITIAL_ADMIN_EMAIL || "admin@projectku.id";
+  const adminEmail = "rudi.catsmile2@gmail.com";
 
   try {
     const clerkUser = await clerkCurrentUser();
@@ -22,7 +37,7 @@ export async function getCurrentUser(): Promise<CurrentUserSession> {
       const name =
         [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") ||
         "Pengguna";
-      const role = email.toLowerCase() === adminEmail.toLowerCase() ? "admin" : "member";
+      const role = isUserAdminEmail(email) ? "admin" : "member";
 
       return {
         id: clerkUser.id,
@@ -118,7 +133,15 @@ export async function getOrCreateDbMember(): Promise<{
         .limit(1);
 
       if (existing.length > 0) {
-        return existing[0];
+        const record = existing[0];
+        if (isUserAdminEmail(currentUser.email) && record.role !== "admin") {
+          await db
+            .update(members)
+            .set({ role: "admin", updatedAt: new Date() })
+            .where(eq(members.id, record.id));
+          record.role = "admin";
+        }
+        return record;
       }
 
       // Insert member baru jika belum terdaftar
@@ -128,10 +151,7 @@ export async function getOrCreateDbMember(): Promise<{
           clerkId: currentUser.id,
           name: currentUser.name,
           email: currentUser.email,
-          role:
-            currentUser.email.toLowerCase() === adminEmail.toLowerCase()
-              ? "admin"
-              : currentUser.role,
+          role: isUserAdminEmail(currentUser.email) ? "admin" : currentUser.role,
         })
         .returning();
 
