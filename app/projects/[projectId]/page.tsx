@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, useRouter } from "next/navigation";
 import {
   GitBranch,
   Building2,
@@ -22,6 +22,7 @@ import {
   FileText,
   History,
   Trash2,
+  AlertCircle,
 } from "lucide-react";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { Button } from "@/components/ui/button";
@@ -38,7 +39,7 @@ import {
   INITIAL_MEMBERS,
   ActivityLog,
 } from "@/lib/mock-data";
-import { getProjectByIdAction } from "@/actions/projects";
+import { getProjectByIdAction, deleteProjectAction } from "@/actions/projects";
 import {
   addProjectNoteAction,
   togglePinNoteAction,
@@ -57,6 +58,7 @@ export default function ProjectDetailPage({
   params: Promise<{ projectId: string }>;
 }) {
   const unwrappedParams = React.use(params);
+  const router = useRouter();
 
   const [project, setProject] = React.useState<Project | null>(null);
   const [teamMembers, setTeamMembers] = React.useState<Member[]>(INITIAL_MEMBERS);
@@ -78,6 +80,11 @@ export default function ProjectDetailPage({
   const [selectedMemberId, setSelectedMemberId] = React.useState(INITIAL_MEMBERS[1]?.id || "");
   const [selectedMemberRole, setSelectedMemberRole] = React.useState<ProjectMemberRole>("frontend");
   const [submittingMember, setSubmittingMember] = React.useState(false);
+
+  // Delete project state
+  const [deleteModalOpen, setDeleteDialogOpen] = React.useState(false);
+  const [isDeletingProject, setIsDeletingProject] = React.useState(false);
+  const [deleteError, setDeleteError] = React.useState("");
 
   const refreshProjectData = React.useCallback(async () => {
     try {
@@ -259,6 +266,25 @@ export default function ProjectDetailPage({
     }
   };
 
+  const handleDeleteProject = async () => {
+    if (!project) return;
+    setIsDeletingProject(true);
+    setDeleteError("");
+    try {
+      const res = await deleteProjectAction(project.id);
+      if (res.success) {
+        router.push("/projects");
+      } else {
+        setDeleteError("Gagal menghapus proyek dari database.");
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Gagal menghapus proyek";
+      setDeleteError(msg);
+    } finally {
+      setIsDeletingProject(false);
+    }
+  };
+
   const sortedNotes = [...project.notes].sort((a, b) => {
     if (a.isPinned === b.isPinned) return 0;
     return a.isPinned ? -1 : 1;
@@ -321,6 +347,16 @@ export default function ProjectDetailPage({
                     Edit Data Proyek
                   </Button>
                 </Link>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDeleteDialogOpen(true)}
+                  className="text-xs gap-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-slate-200 dark:border-slate-800 dark:hover:bg-rose-950/40"
+                  title="Hapus proyek"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Hapus Proyek
+                </Button>
               </div>
             </div>
 
@@ -844,6 +880,45 @@ export default function ProjectDetailPage({
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal Dialog Konfirmasi Hapus Proyek */}
+      <Modal
+        isOpen={deleteModalOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+        title="Konfirmasi Hapus Proyek"
+        description={`Apakah Anda yakin ingin menghapus proyek '${project.name}'?`}
+      >
+        <div className="space-y-4 text-xs text-slate-600 dark:text-slate-300">
+          <p>
+            Tindakan ini akan menghapus data dokumentasi proyek, catatan tim, penugasan anggota, dan kredensial terenkripsi secara permanen dari database. Tindakan ini tidak dapat dibatalkan.
+          </p>
+          {deleteError && (
+            <div className="p-3 rounded-lg border border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300 flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+              <span>{deleteError}</span>
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setDeleteDialogOpen(false)}
+            >
+              Batal
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              size="sm"
+              disabled={isDeletingProject}
+              onClick={handleDeleteProject}
+            >
+              {isDeletingProject ? "Menghapus..." : "Hapus Proyek"}
+            </Button>
+          </div>
+        </div>
       </Modal>
     </DashboardShell>
   );
