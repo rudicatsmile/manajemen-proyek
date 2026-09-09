@@ -6,8 +6,8 @@ import { getCurrentUser, requireAdmin } from "@/lib/auth";
 import { createActivityLog } from "@/lib/activity-logger";
 import { sanitizeObject } from "@/lib/sanitize";
 import { db } from "@/lib/db";
-import { members } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { members, projects } from "@/lib/db/schema";
+import { eq, and, ne } from "drizzle-orm";
 import {
   inviteMemberSchema,
   InviteMemberValues,
@@ -32,7 +32,7 @@ export async function getTeamMembersAction(): Promise<Member[]> {
           name: m.name,
           email: m.email,
           role: m.role,
-          specialization: m.role === "admin" ? "Super Admin & Architect" : "Software Engineer",
+          specialization: m.specialization || (m.role === "admin" ? "Super Admin & Architect" : "Software Engineer"),
           avatarUrl: m.avatarUrl || undefined,
           createdAt: m.createdAt ? m.createdAt.toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
         }));
@@ -67,6 +67,7 @@ export async function inviteTeamMemberAction(data: InviteMemberValues) {
           name: parsed.name,
           email: parsed.email,
           role: parsed.role as MemberRole,
+          specialization: parsed.specialization,
         })
         .returning();
 
@@ -139,6 +140,104 @@ export async function updateTeamMemberRoleAction(memberId: string, role: MemberR
     memberName: currentUser.name,
     action: "PROJECT_UPDATED",
     details: `Mengubah peran anggota tim menjadi ${role}`,
+  });
+
+  safeRevalidate("/team");
+  return { success: true };
+}
+
+export interface UpdateTeamMemberInput {
+  id: string;
+  name: string;
+  email: string;
+  role: MemberRole;
+  specialization: string;
+}
+
+export async function updateTeamMemberAction(data: UpdateTeamMemberInput) {
+  await requireAdmin();
+  const currentUser = await getCurrentUser();
+
+  try {
+    if (process.env.DATABASE_URL) {
+      const existing = await db
+        .select()
+        .from(members)
+        .where(and(eq(members.email, data.email.trim()), ne(members.id, data.id)));
+      if (existing.length > 0) {
+        throw new Error("Email tersebut sudah digunakan oleh anggota tim lain");
+      }
+
+      await db
+        .update(members)
+        .set({
+          name: data.name.trim(),
+          email: data.email.trim(),
+          role: data.role,
+          specialization: data.specialization.trim() || null,
+          updatedAt: new Date(),
+        })
+        .where(eq(members.id, data.id));
+    }
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message.includes("sudah digunakan")) {
+      throw err;
+    }
+    console.warn("DB update member failed, using memory store:", err);
+  }
+
+  const member = runtimeMembers.find((m) => m.id === data.id);
+  if (member) {
+    member.name = data.name.trim();
+    member.email = data.email.trim();
+    member.role = data.role;
+    if (data.specialization) member.specialization = data.specialization;
+  }
+
+  await createActivityLog({
+    memberId: currentUser.id,
+    memberName: currentUser.name,
+    action: "PROJECT_UPDATED",
+    details: `Memperbarui data anggota tim ${data.name} (${data.role})`,
+  });
+
+  safeRevalidate("/team");
+  return { success: true };
+}
+
+export async function deleteTeamMemberAction(memberId: string) {
+  await requireAdmin();
+  const currentUser = await getCurrentUser();
+
+  if (currentUser.id === memberId) {
+    throw new Error("Anda tidak dapat menghapus akun Anda sendiri.");
+  }
+
+  try {
+    if (process.env.DATABASE_URL) {
+      // Reassign any projects created by this member to the current admin
+      await db
+        .update(projects)
+        .set({ createdById: currentUser.id })
+        .where(eq(projects.createdById, memberId));
+
+      await db.delete(members).where(eq(members.id, memberId));
+    }
+  } catch (err: unknown) {
+    console.error("DB delete member error:", err);
+    throw new Error("Gagal menghapus anggota tim dari database");
+  }
+
+  const idx = runtimeMembers.findIndex((m) => m.id === memberId);
+  if (idx !== -1) {
+    runtimeMembers.splice(idx, 1);
+  }
+
+  await createActivityLog({
+    memberId: currentUser.id,
+    memberName: currentUser.name,
+    action: "MEMBER_REMOVED",
+    details: `Menghapus anggota tim dari sistem`,
   });
 
   safeRevalidate("/team");

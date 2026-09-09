@@ -53,6 +53,7 @@ export const members = pgTable(
     email: text("email").notNull(),
     avatarUrl: text("avatar_url"),
     role: memberRoleEnum("role").notNull().default("member"),
+    specialization: text("specialization"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

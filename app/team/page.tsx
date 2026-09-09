@@ -12,6 +12,8 @@ import {
   Calendar,
   Sparkles,
   AlertCircle,
+  Edit,
+  Trash2,
 } from "lucide-react";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { Button } from "@/components/ui/button";
@@ -23,6 +25,8 @@ import {
   getTeamMembersAction,
   inviteTeamMemberAction,
   updateTeamMemberRoleAction,
+  updateTeamMemberAction,
+  deleteTeamMemberAction,
 } from "@/actions/team";
 
 export default function TeamPage() {
@@ -39,6 +43,25 @@ export default function TeamPage() {
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [inviteSuccess, setInviteSuccess] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState("");
+
+  // Edit modal state
+  const [editModalOpen, setEditModalOpen] = React.useState(false);
+  const [memberToEdit, setMemberToEdit] = React.useState<Member | null>(null);
+  const [editName, setEditName] = React.useState("");
+  const [editEmail, setEditEmail] = React.useState("");
+  const [editRole, setEditRole] = React.useState<MemberRole>("member");
+  const [editSpecialization, setEditSpecialization] = React.useState("Fullstack Developer");
+  const [isEditing, setIsEditing] = React.useState(false);
+  const [editErrorMessage, setEditErrorMessage] = React.useState("");
+
+  // Delete modal state
+  const [deleteModalOpen, setDeleteModalOpen] = React.useState(false);
+  const [memberToDelete, setMemberToDelete] = React.useState<Member | null>(null);
+  const [isDeleting, setIsDeleting] = React.useState(false);
+  const [deleteErrorMessage, setDeleteErrorMessage] = React.useState("");
+
+  // Success alert
+  const [successBanner, setSuccessBanner] = React.useState("");
 
   const refreshMembers = React.useCallback(async () => {
     try {
@@ -117,12 +140,100 @@ export default function TeamPage() {
     }
   };
 
+  const handleOpenEdit = (member: Member) => {
+    setMemberToEdit(member);
+    setEditName(member.name);
+    setEditEmail(member.email);
+    setEditRole(member.role);
+    setEditSpecialization(member.specialization || "Fullstack Developer");
+    setEditErrorMessage("");
+    setEditModalOpen(true);
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!memberToEdit || !editName.trim() || !editEmail.trim() || isEditing) return;
+
+    setIsEditing(true);
+    setEditErrorMessage("");
+
+    try {
+      const res = await updateTeamMemberAction({
+        id: memberToEdit.id,
+        name: editName.trim(),
+        email: editEmail.trim(),
+        role: editRole,
+        specialization: editSpecialization.trim(),
+      });
+
+      if (res.success) {
+        setMembers((prev) =>
+          prev.map((m) =>
+            m.id === memberToEdit.id
+              ? {
+                  ...m,
+                  name: editName.trim(),
+                  email: editEmail.trim(),
+                  role: editRole,
+                  specialization: editSpecialization.trim(),
+                }
+              : m
+          )
+        );
+        setEditModalOpen(false);
+        setSuccessBanner(`Data anggota '${editName.trim()}' berhasil diperbarui.`);
+        setTimeout(() => setSuccessBanner(""), 4000);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Gagal memperbarui data anggota";
+      setEditErrorMessage(msg);
+    } finally {
+      setIsEditing(false);
+    }
+  };
+
+  const handleOpenDelete = (member: Member) => {
+    setMemberToDelete(member);
+    setDeleteErrorMessage("");
+    setDeleteModalOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!memberToDelete || isDeleting) return;
+
+    setIsDeleting(true);
+    setDeleteErrorMessage("");
+
+    try {
+      const res = await deleteTeamMemberAction(memberToDelete.id);
+      if (res.success) {
+        setMembers((prev) => prev.filter((m) => m.id !== memberToDelete.id));
+        setDeleteModalOpen(false);
+        setSuccessBanner(`Anggota tim '${memberToDelete.name}' berhasil dihapus dari sistem.`);
+        setTimeout(() => setSuccessBanner(""), 4000);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Gagal menghapus anggota tim";
+      setDeleteErrorMessage(msg);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
     <DashboardShell
       title="Manajemen Anggota Tim"
       subtitle="Kelola akun internal, hak akses Admin / Member, dan undang personil developer."
     >
       <div className="space-y-6">
+        {/* Banner Notifikasi Sukses */}
+        {successBanner && (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3.5 text-xs font-semibold text-emerald-800 flex items-center gap-2 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+            <span>{successBanner}</span>
+          </div>
+        )}
+
         {/* Top Action & Search */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
           <div className="relative flex-1 max-w-md">
@@ -167,7 +278,7 @@ export default function TeamPage() {
                     Bergabung
                   </th>
                   <th scope="col" className="px-6 py-3.5 text-right">
-                    Hak Akses
+                    Aksi
                   </th>
                 </tr>
               </thead>
@@ -226,14 +337,37 @@ export default function TeamPage() {
                     </td>
 
                     <td className="px-6 py-4 text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleToggleRole(member.id)}
-                        className="h-7 text-xs"
-                      >
-                        {member.role === "admin" ? "Jadikan Member" : "Jadikan Admin"}
-                      </Button>
+                      <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleToggleRole(member.id)}
+                          className="h-7 px-2 text-[11px]"
+                          title="Ubah peran admin / member"
+                        >
+                          {member.role === "admin" ? "Jadikan Member" : "Jadikan Admin"}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleOpenEdit(member)}
+                          className="h-7 px-2 text-[11px] gap-1 text-slate-700 hover:text-blue-600 hover:bg-blue-50 dark:text-slate-300 dark:hover:bg-blue-950/40"
+                          title="Edit data anggota"
+                        >
+                          <Edit className="h-3 w-3" />
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleOpenDelete(member)}
+                          className="h-7 px-2 text-[11px] gap-1 text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-slate-200 dark:border-slate-800 dark:hover:bg-rose-950/40"
+                          title="Hapus anggota tim"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          Hapus
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -339,6 +473,130 @@ export default function TeamPage() {
             </div>
           </form>
         )}
+      </Modal>
+
+      {/* Modal Edit Data Anggota */}
+      <Modal
+        isOpen={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+        title="Edit Data Anggota Tim"
+        description="Perbarui informasi profil, email, hak akses, dan spesialisasi teknis anggota."
+      >
+        <form onSubmit={handleEditSubmit} className="space-y-4 text-xs">
+          {editErrorMessage && (
+            <div className="p-3 rounded-lg border border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300 flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+              <span>{editErrorMessage}</span>
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Nama Lengkap <span className="text-rose-500">*</span>
+            </label>
+            <Input
+              required
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              placeholder="Contoh: Budi Pratama"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Alamat Email <span className="text-rose-500">*</span>
+            </label>
+            <Input
+              type="email"
+              required
+              value={editEmail}
+              onChange={(e) => setEditEmail(e.target.value)}
+              placeholder="budi@projectku.id"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Peran Hak Akses
+              </label>
+              <select
+                value={editRole}
+                onChange={(e) => setEditRole(e.target.value as MemberRole)}
+                className="w-full h-10 rounded-lg border border-slate-300 bg-white px-3 text-xs text-slate-900 focus:ring-2 focus:ring-blue-600 dark:border-slate-700 dark:bg-zinc-900 dark:text-slate-100"
+              >
+                <option value="member">Member (Akses Proyek)</option>
+                <option value="admin">Admin (Hak Penuh)</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Spesialisasi Teknis
+              </label>
+              <Input
+                value={editSpecialization}
+                onChange={(e) => setEditSpecialization(e.target.value)}
+                placeholder="Contoh: Fullstack Developer, QA Lead"
+              />
+            </div>
+          </div>
+
+          <div className="pt-2 flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setEditModalOpen(false)}
+            >
+              Batal
+            </Button>
+            <Button type="submit" size="sm" disabled={isEditing}>
+              {isEditing ? "Menyimpan..." : "Simpan Perubahan"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Dialog Konfirmasi Hapus Anggota */}
+      <Modal
+        isOpen={deleteModalOpen}
+        onClose={() => setDeleteModalOpen(false)}
+        title="Konfirmasi Hapus Anggota"
+        description={`Apakah Anda yakin ingin menghapus anggota tim '${memberToDelete?.name}'?`}
+      >
+        <div className="space-y-4 text-xs text-slate-600 dark:text-slate-300">
+          <p>
+            Tindakan ini akan menghapus akun internal anggota ini dari database dan mencabut seluruh penugasan proyek yang bersangkutan. Tindakan ini tidak dapat dibatalkan.
+          </p>
+
+          {deleteErrorMessage && (
+            <div className="p-3 rounded-lg border border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300 flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+              <span>{deleteErrorMessage}</span>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setDeleteModalOpen(false)}
+            >
+              Batal
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              size="sm"
+              disabled={isDeleting}
+              onClick={handleDeleteConfirm}
+            >
+              {isDeleting ? "Menghapus..." : "Hapus Anggota"}
+            </Button>
+          </div>
+        </div>
       </Modal>
     </DashboardShell>
   );
