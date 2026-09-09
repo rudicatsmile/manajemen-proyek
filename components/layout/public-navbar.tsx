@@ -71,7 +71,7 @@ export function PublicNavbar() {
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </Link>
-            <UserButton afterSignOutUrl="/" />
+            <UserButton />
           </SignedIn>
         </div>
 
