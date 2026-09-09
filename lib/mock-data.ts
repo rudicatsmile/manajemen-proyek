@@ -97,6 +97,53 @@ export interface GitHubRepoDetails {
   };
 }
 
+export type CredentialType = "ssh" | "database" | "cpanel" | "api" | "vps" | "other";
+
+export interface ProjectCredential {
+  id: string;
+  projectId: string;
+  name: string;
+  type: string;
+  host?: string;
+  port?: string;
+  username: string;
+  passwordPlain?: string;
+  passwordEncrypted?: string;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export const CREDENTIAL_TYPE_CONFIG: Record<
+  string,
+  { label: string; badgeClass: string }
+> = {
+  ssh: {
+    label: "SSH Server",
+    badgeClass: "bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-900 dark:text-slate-300",
+  },
+  database: {
+    label: "Database",
+    badgeClass: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300",
+  },
+  cpanel: {
+    label: "cPanel / Panel",
+    badgeClass: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300",
+  },
+  api: {
+    label: "API / Service",
+    badgeClass: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300",
+  },
+  vps: {
+    label: "VPS / Server",
+    badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300",
+  },
+  other: {
+    label: "Lainnya",
+    badgeClass: "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-900 dark:text-slate-400",
+  },
+};
+
 export interface Project {
   id: string;
   name: string;
@@ -108,9 +155,10 @@ export interface Project {
   backendTech: string;
   databaseTech: string;
   repositoryUrl: string;
-  credentialUsername: string;
-  credentialPasswordEncrypted: string;
-  credentialPasswordPlain: string; // Khusus mock demo
+  credentialUsername?: string;
+  credentialPasswordEncrypted?: string;
+  credentialPasswordPlain?: string; // Khusus mock demo
+  credentials: ProjectCredential[];
   githubDetails: GitHubRepoDetails;
   members: ProjectMember[];
   notes: ProjectNote[];
@@ -292,6 +340,32 @@ export const INITIAL_PROJECTS: Project[] = [
     credentialUsername: "admin_sidesa",
     credentialPasswordEncrypted: "enc_9f86d081884c7d659a2f_demo",
     credentialPasswordPlain: "DesaSukamaju2026!",
+    credentials: [
+      {
+        id: "cred-1-1",
+        projectId: "proj-1",
+        name: "Server Production (VPS)",
+        type: "vps",
+        host: "103.145.22.89",
+        port: "22",
+        username: "admin_sidesa",
+        passwordPlain: "DesaSukamaju2026!",
+        passwordEncrypted: "enc_9f86d081884c7d659a2f_demo",
+        notes: "Akses root via sudoers",
+      },
+      {
+        id: "cred-1-2",
+        projectId: "proj-1",
+        name: "Database PostgreSQL Prod",
+        type: "database",
+        host: "pg-sidesa.internal.net",
+        port: "5432",
+        username: "sidesa_user",
+        passwordPlain: "PostgresSecurePass2026!",
+        passwordEncrypted: "enc_5f4dcc3b5aa765d61d83_demo",
+        notes: "Database cluster primer",
+      },
+    ],
     githubDetails: {
       connected: true,
       repoUrl: "https://github.com/eduwbemu/si-desa",
@@ -376,6 +450,19 @@ export const INITIAL_PROJECTS: Project[] = [
     credentialUsername: "ops_supervisor",
     credentialPasswordEncrypted: "enc_7a12b489912c_demo",
     credentialPasswordPlain: "FleetTracking#892",
+    credentials: [
+      {
+        id: "cred-2-1",
+        projectId: "proj-2",
+        name: "Server Gateway IoT",
+        type: "ssh",
+        host: "103.88.10.45",
+        port: "2222",
+        username: "ops_supervisor",
+        passwordPlain: "FleetTracking#892",
+        notes: "SSH port non-standar",
+      },
+    ],
     githubDetails: {
       connected: true,
       repoUrl: "https://github.com/nusantara-tech/harapan-tracking",
@@ -440,6 +527,19 @@ export const INITIAL_PROJECTS: Project[] = [
     credentialUsername: "dev_academic",
     credentialPasswordEncrypted: "enc_5e88bb901a_demo",
     credentialPasswordPlain: "AcadBina2025!",
+    credentials: [
+      {
+        id: "cred-3-1",
+        projectId: "proj-3",
+        name: "cPanel Kampus Staging",
+        type: "cpanel",
+        host: "cpanel.binanusantara.ac.id",
+        port: "2083",
+        username: "dev_academic",
+        passwordPlain: "AcadBina2025!",
+        notes: "Hosting panel kampus",
+      },
+    ],
     githubDetails: {
       connected: true,
       repoUrl: "https://github.com/binabangsa/siakad-core",
@@ -504,6 +604,19 @@ export const INITIAL_PROJECTS: Project[] = [
     credentialUsername: "clinic_staff",
     credentialPasswordEncrypted: "enc_112233aabb_demo",
     credentialPasswordPlain: "MedSecurePass99*",
+    credentials: [
+      {
+        id: "cred-4-1",
+        projectId: "proj-4",
+        name: "Server Rekam Medis Lokal",
+        type: "vps",
+        host: "192.168.1.200",
+        port: "22",
+        username: "clinic_staff",
+        passwordPlain: "MedSecurePass99*",
+        notes: "Hanya dapat diakses melalui intranet klinik",
+      },
+    ],
     githubDetails: {
       connected: true,
       repoUrl: "https://github.com/sehatsentosa/med-record",
@@ -568,6 +681,19 @@ export const INITIAL_PROJECTS: Project[] = [
     credentialUsername: "b2b_procure_lead",
     credentialPasswordEncrypted: "enc_998877ccdd_demo",
     credentialPasswordPlain: "VendorAuth99!",
+    credentials: [
+      {
+        id: "cred-5-1",
+        projectId: "proj-5",
+        name: "Server Cloud Kubernetes",
+        type: "ssh",
+        host: "k8s-master.b2bprocure.co.id",
+        port: "22",
+        username: "b2b_procure_lead",
+        passwordPlain: "VendorAuth99!",
+        notes: "Bastion host jumpbox",
+      },
+    ],
     githubDetails: {
       connected: true,
       repoUrl: "https://github.com/nusantara-solusindo/b2b-procurement",

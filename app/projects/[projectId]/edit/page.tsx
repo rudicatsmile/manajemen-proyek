@@ -13,6 +13,9 @@ import {
   Layers,
   CheckCircle2,
   AlertCircle,
+  Plus,
+  Trash2,
+  KeyRound,
 } from "lucide-react";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { Button } from "@/components/ui/button";
@@ -42,8 +45,18 @@ export default function EditProjectPage({
   const [backendTech, setBackendTech] = React.useState("");
   const [databaseTech, setDatabaseTech] = React.useState("");
   const [repositoryUrl, setRepositoryUrl] = React.useState("");
-  const [credentialUsername, setCredentialUsername] = React.useState("");
-  const [credentialPassword, setCredentialPassword] = React.useState("");
+  const [credentialsList, setCredentialsList] = React.useState<
+    Array<{
+      id: string;
+      name: string;
+      type: string;
+      host: string;
+      port: string;
+      username: string;
+      password: string;
+      notes: string;
+    }>
+  >([]);
 
   const [saving, setSaving] = React.useState(false);
   const [savedSuccess, setSavedSuccess] = React.useState(false);
@@ -75,8 +88,35 @@ export default function EditProjectPage({
         setBackendTech(proj.backendTech || "");
         setDatabaseTech(proj.databaseTech || "");
         setRepositoryUrl(proj.repositoryUrl || "");
-        setCredentialUsername(proj.credentialUsername || "");
-        setCredentialPassword(proj.credentialPasswordPlain || "");
+        if (proj.credentials && proj.credentials.length > 0) {
+          setCredentialsList(
+            proj.credentials.map((c) => ({
+              id: c.id,
+              name: c.name,
+              type: c.type || "other",
+              host: c.host || "",
+              port: c.port || "",
+              username: c.username,
+              password: c.passwordPlain || "",
+              notes: c.notes || "",
+            }))
+          );
+        } else if (proj.credentialUsername || proj.credentialPasswordPlain) {
+          setCredentialsList([
+            {
+              id: "legacy",
+              name: "Server Utama (Default)",
+              type: "vps",
+              host: "",
+              port: "22",
+              username: proj.credentialUsername || "",
+              password: proj.credentialPasswordPlain || "",
+              notes: "",
+            },
+          ]);
+        } else {
+          setCredentialsList([]);
+        }
       } catch (err) {
         console.error("Gagal memuat data proyek untuk diedit:", err);
       } finally {
@@ -90,6 +130,36 @@ export default function EditProjectPage({
     return notFound();
   }
 
+  const handleAddCredentialItem = () => {
+    setCredentialsList((prev) => [
+      ...prev,
+      {
+        id: `new-${Date.now()}`,
+        name: "",
+        type: "vps",
+        host: "",
+        port: "",
+        username: "",
+        password: "",
+        notes: "",
+      },
+    ]);
+  };
+
+  const handleRemoveCredentialItem = (id: string) => {
+    setCredentialsList((prev) => prev.filter((c) => c.id !== id));
+  };
+
+  const handleUpdateCredentialItem = (
+    id: string,
+    field: "name" | "type" | "host" | "port" | "username" | "password" | "notes",
+    val: string
+  ) => {
+    setCredentialsList((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, [field]: val } : c))
+    );
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!project) return;
@@ -98,6 +168,19 @@ export default function EditProjectPage({
     setErrorMessage("");
 
     try {
+      const validCredentials = credentialsList
+        .filter((c) => c.name.trim() && c.username.trim())
+        .map((c) => ({
+          id: c.id,
+          name: c.name.trim(),
+          type: c.type || "other",
+          host: c.host.trim() || undefined,
+          port: c.port.trim() || undefined,
+          username: c.username.trim(),
+          password: c.password || undefined,
+          notes: c.notes.trim() || undefined,
+        }));
+
       const res = await updateProjectAction(project.id, {
         name,
         clientId,
@@ -107,8 +190,9 @@ export default function EditProjectPage({
         backendTech,
         databaseTech,
         repositoryUrl,
-        credentialUsername,
-        credentialPassword,
+        credentialUsername: validCredentials[0]?.username || "",
+        credentialPassword: validCredentials[0]?.password || "",
+        credentials: validCredentials,
       });
 
       if (res.success) {
@@ -279,40 +363,152 @@ export default function EditProjectPage({
               </CardContent>
             </Card>
 
-            {/* Card 3: Kredensial Server */}
+            {/* Card 3: Kredensial Server (Multi-Kredensial) */}
             <Card className="border-slate-200 shadow-xs dark:border-slate-800">
-              <CardHeader className="p-5 pb-3 border-b border-slate-100 dark:border-slate-800">
-                <CardTitle className="text-sm font-bold flex items-center gap-2">
-                  <Lock className="h-4 w-4 text-emerald-600" />
-                  Kredensial Server (Akan Dienkripsi Otomatis)
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  Password tersimpan secara aman dengan AES-256-GCM.
-                </CardDescription>
+              <CardHeader className="p-5 pb-3 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-sm font-bold flex items-center gap-2">
+                    <Lock className="h-4 w-4 text-emerald-600" />
+                    Kredensial Server (Akan Dienkripsi Otomatis)
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Kelola daftar kredensial akses server dan database proyek. Tersimpan aman dengan enkripsi AES-256-GCM.
+                  </CardDescription>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddCredentialItem}
+                  className="text-xs gap-1.5 h-8 shrink-0 self-start sm:self-auto"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Tambah Kredensial
+                </Button>
               </CardHeader>
               <CardContent className="p-5 space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Username / Akun Kredensial
-                    </label>
-                    <Input
-                      value={credentialUsername}
-                      onChange={(e) => setCredentialUsername(e.target.value)}
-                    />
+                {credentialsList.length === 0 ? (
+                  <div className="text-center py-6 text-xs text-slate-500 border border-dashed rounded-lg border-slate-200 dark:border-slate-800">
+                    Belum ada kredensial server. Klik tombol &ldquo;Tambah Kredensial&rdquo; untuk menambahkan.
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Kata Sandi Kredensial
-                    </label>
-                    <Input
-                      type="password"
-                      value={credentialPassword}
-                      onChange={(e) => setCredentialPassword(e.target.value)}
-                      placeholder="Masukkan kata sandi baru untuk memperbarui..."
-                    />
-                  </div>
-                </div>
+                ) : (
+                  credentialsList.map((cred, index) => (
+                    <div
+                      key={cred.id}
+                      className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3 dark:border-slate-800 dark:bg-zinc-950/50"
+                    >
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-800">
+                        <span className="text-xs font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                          <KeyRound className="h-3.5 w-3.5 text-blue-600" />
+                          Kredensial #{index + 1}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRemoveCredentialItem(cred.id)}
+                          className="h-7 px-2 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50"
+                        >
+                          <Trash2 className="h-3.5 w-3.5 mr-1" />
+                          Hapus
+                        </Button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-medium text-slate-700 dark:text-slate-300">
+                            Nama / Label Kredensial <span className="text-rose-500">*</span>
+                          </label>
+                          <Input
+                            value={cred.name}
+                            onChange={(e) => handleUpdateCredentialItem(cred.id, "name", e.target.value)}
+                            placeholder="Contoh: Server Production (VPS)"
+                            className="h-9 text-xs"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-medium text-slate-700 dark:text-slate-300">
+                            Tipe Akses
+                          </label>
+                          <select
+                            value={cred.type}
+                            onChange={(e) => handleUpdateCredentialItem(cred.id, "type", e.target.value)}
+                            className="w-full h-9 rounded-lg border border-slate-300 bg-white px-3 text-xs text-slate-900 focus:ring-2 focus:ring-blue-600 dark:border-slate-700 dark:bg-zinc-900 dark:text-slate-100"
+                          >
+                            <option value="vps">VPS / Dedicated Server</option>
+                            <option value="ssh">SSH Server</option>
+                            <option value="database">Database Server</option>
+                            <option value="cpanel">cPanel / Web Hosting</option>
+                            <option value="api">API Key / Token</option>
+                            <option value="other">Lainnya</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-medium text-slate-700 dark:text-slate-300">
+                            Host / IP / URL
+                          </label>
+                          <Input
+                            value={cred.host}
+                            onChange={(e) => handleUpdateCredentialItem(cred.id, "host", e.target.value)}
+                            placeholder="103.145.xx.xx atau db.domain.com"
+                            className="h-9 text-xs"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-medium text-slate-700 dark:text-slate-300">
+                            Port (Opsional)
+                          </label>
+                          <Input
+                            value={cred.port}
+                            onChange={(e) => handleUpdateCredentialItem(cred.id, "port", e.target.value)}
+                            placeholder="22, 5432, 3306"
+                            className="h-9 text-xs"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-medium text-slate-700 dark:text-slate-300">
+                            Username / Akun <span className="text-rose-500">*</span>
+                          </label>
+                          <Input
+                            value={cred.username}
+                            onChange={(e) => handleUpdateCredentialItem(cred.id, "username", e.target.value)}
+                            placeholder="admin, root, postgres"
+                            className="h-9 text-xs"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-medium text-slate-700 dark:text-slate-300">
+                            Kata Sandi
+                          </label>
+                          <Input
+                            type="password"
+                            value={cred.password}
+                            onChange={(e) => handleUpdateCredentialItem(cred.id, "password", e.target.value)}
+                            placeholder="Biarkan kosong jika tidak ingin mengubah password"
+                            className="h-9 text-xs"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-medium text-slate-700 dark:text-slate-300">
+                          Catatan Akses (Opsional)
+                        </label>
+                        <Input
+                          value={cred.notes}
+                          onChange={(e) => handleUpdateCredentialItem(cred.id, "notes", e.target.value)}
+                          placeholder="Contoh: Akses via VPN kantor, database cluster standby"
+                          className="h-9 text-xs"
+                        />
+                      </div>
+                    </div>
+                  ))
+                )}
               </CardContent>
             </Card>
 

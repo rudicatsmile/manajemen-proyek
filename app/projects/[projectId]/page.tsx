@@ -23,6 +23,8 @@ import {
   History,
   Trash2,
   AlertCircle,
+  KeyRound,
+  Server,
 } from "lucide-react";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { Button } from "@/components/ui/button";
@@ -38,8 +40,14 @@ import {
   Member,
   INITIAL_MEMBERS,
   ActivityLog,
+  CREDENTIAL_TYPE_CONFIG,
+  ProjectCredential,
 } from "@/lib/mock-data";
 import { getProjectByIdAction, deleteProjectAction } from "@/actions/projects";
+import {
+  addProjectCredentialAction,
+  deleteProjectCredentialAction,
+} from "@/actions/project-credentials";
 import {
   addProjectNoteAction,
   togglePinNoteAction,
@@ -85,6 +93,22 @@ export default function ProjectDetailPage({
   const [deleteModalOpen, setDeleteDialogOpen] = React.useState(false);
   const [isDeletingProject, setIsDeletingProject] = React.useState(false);
   const [deleteError, setDeleteError] = React.useState("");
+
+  // Multi-credential state
+  const [visiblePasswords, setVisiblePasswords] = React.useState<Record<string, boolean>>({});
+  const [addCredModalOpen, setAddCredModalOpen] = React.useState(false);
+  const [credName, setCredName] = React.useState("");
+  const [credType, setCredType] = React.useState("vps");
+  const [credHost, setCredHost] = React.useState("");
+  const [credPort, setCredPort] = React.useState("");
+  const [credUsername, setCredUsername] = React.useState("");
+  const [credPassword, setCredPassword] = React.useState("");
+  const [credNotes, setCredNotes] = React.useState("");
+  const [submittingCred, setSubmittingCred] = React.useState(false);
+  const [credError, setCredError] = React.useState("");
+
+  const [credToDelete, setCredToDelete] = React.useState<ProjectCredential | null>(null);
+  const [isDeletingCred, setIsDeletingCred] = React.useState(false);
 
   const refreshProjectData = React.useCallback(async () => {
     try {
@@ -285,6 +309,67 @@ export default function ProjectDetailPage({
     }
   };
 
+  const togglePasswordVisibility = (credId: string) => {
+    setVisiblePasswords((prev) => ({
+      ...prev,
+      [credId]: !prev[credId],
+    }));
+  };
+
+  const handleAddCredential = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!project || !credName.trim() || !credUsername.trim()) return;
+
+    setSubmittingCred(true);
+    setCredError("");
+
+    try {
+      const res = await addProjectCredentialAction({
+        projectId: project.id,
+        name: credName.trim(),
+        type: credType,
+        host: credHost.trim() || undefined,
+        port: credPort.trim() || undefined,
+        username: credUsername.trim(),
+        password: credPassword || undefined,
+        notes: credNotes.trim() || undefined,
+      });
+
+      if (res.success) {
+        setAddCredModalOpen(false);
+        setCredName("");
+        setCredType("vps");
+        setCredHost("");
+        setCredPort("");
+        setCredUsername("");
+        setCredPassword("");
+        setCredNotes("");
+        refreshProjectData();
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Gagal menambahkan kredensial";
+      setCredError(msg);
+    } finally {
+      setSubmittingCred(false);
+    }
+  };
+
+  const handleDeleteCredential = async () => {
+    if (!project || !credToDelete) return;
+    setIsDeletingCred(true);
+    try {
+      const res = await deleteProjectCredentialAction(project.id, credToDelete.id);
+      if (res.success) {
+        setCredToDelete(null);
+        refreshProjectData();
+      }
+    } catch (err) {
+      console.error("Gagal menghapus kredensial:", err);
+    } finally {
+      setIsDeletingCred(false);
+    }
+  };
+
   const sortedNotes = [...project.notes].sort((a, b) => {
     if (a.isPinned === b.isPinned) return 0;
     return a.isPinned ? -1 : 1;
@@ -405,78 +490,180 @@ export default function ProjectDetailPage({
                 </div>
               </div>
 
-              {/* Kredensial Box */}
-              <div className="pt-2 space-y-2">
+              {/* Kredensial Multi-Server Box */}
+              <div className="pt-2 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold text-slate-500 uppercase tracking-wider text-[11px] flex items-center gap-1">
-                    <Lock className="h-3 w-3 text-purple-600" />
-                    Kredensial Server (Terenkripsi AES-256)
-                  </span>
-                  <span className="text-[10px] text-purple-600 bg-purple-50 dark:bg-purple-950/50 px-2 py-0.5 rounded font-medium">
-                    Aman Terlindungi
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-slate-500 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                      <Lock className="h-3.5 w-3.5 text-purple-600" />
+                      Kredensial Server ({project.credentials?.length || 0})
+                    </span>
+                    <span className="text-[10px] text-purple-600 bg-purple-50 dark:bg-purple-950/50 px-2 py-0.5 rounded font-medium">
+                      AES-256
+                    </span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAddCredModalOpen(true)}
+                    className="h-7 px-2 text-xs gap-1 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/50"
+                  >
+                    <Plus className="h-3 w-3" />
+                    Tambah
+                  </Button>
                 </div>
 
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3.5 space-y-2.5 dark:border-slate-800 dark:bg-zinc-950">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-500">Username:</span>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-semibold text-slate-900 dark:text-white">
-                        {project.credentialUsername}
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleCopy(project.credentialUsername, "username")}
-                        className="h-6 w-6 text-slate-400"
-                        title="Salin username"
-                      >
-                        {copiedField === "username" ? (
-                          <Check className="h-3 w-3 text-emerald-600" />
-                        ) : (
-                          <Copy className="h-3 w-3" />
-                        )}
-                      </Button>
-                    </div>
+                {(!project.credentials || project.credentials.length === 0) ? (
+                  <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 p-4 text-center space-y-2 dark:border-slate-800 dark:bg-zinc-950/50">
+                    <p className="text-xs text-slate-500">
+                      Belum ada kredensial server terdaftar pada proyek ini.
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAddCredModalOpen(true)}
+                      className="text-xs gap-1 h-7"
+                    >
+                      <Plus className="h-3 w-3" />
+                      Tambah Kredensial Sekarang
+                    </Button>
                   </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {project.credentials.map((cred) => {
+                      const typeConfig =
+                        CREDENTIAL_TYPE_CONFIG[cred.type] || CREDENTIAL_TYPE_CONFIG.other;
+                      const isPwdVisible = visiblePasswords[cred.id] || false;
 
-                  <div className="flex items-center justify-between border-t border-slate-200/60 dark:border-slate-800 pt-2">
-                    <span className="text-slate-500">Kata Sandi:</span>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-semibold text-slate-900 dark:text-white">
-                        {showPassword
-                          ? project.credentialPasswordPlain
-                          : "****************"}
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="h-6 w-6 text-slate-400"
-                        title={showPassword ? "Sembunyikan password" : "Tampilkan password"}
-                      >
-                        {showPassword ? (
-                          <EyeOff className="h-3.5 w-3.5" />
-                        ) : (
-                          <Eye className="h-3.5 w-3.5" />
-                        )}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleCopy(project.credentialPasswordPlain, "pwd")}
-                        className="h-6 w-6 text-slate-400"
-                        title="Salin password"
-                      >
-                        {copiedField === "pwd" ? (
-                          <Check className="h-3 w-3 text-emerald-600" />
-                        ) : (
-                          <Copy className="h-3 w-3" />
-                        )}
-                      </Button>
-                    </div>
+                      return (
+                        <div
+                          key={cred.id}
+                          className="rounded-lg border border-slate-200 bg-slate-50 p-3.5 space-y-2 dark:border-slate-800 dark:bg-zinc-950"
+                        >
+                          <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-slate-200/60 dark:border-slate-800">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                                <KeyRound className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                                {cred.name}
+                              </span>
+                              <span
+                                className={`text-[10px] px-2 py-0.5 rounded border font-medium ${typeConfig.badgeClass}`}
+                              >
+                                {typeConfig.label}
+                              </span>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setCredToDelete(cred)}
+                              className="h-6 w-6 text-slate-400 hover:text-rose-600"
+                              title="Hapus kredensial ini"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+
+                          {cred.host && (
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-slate-500">Host / IP:</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono text-slate-900 dark:text-white">
+                                  {cred.host}
+                                  {cred.port ? `:${cred.port}` : ""}
+                                </span>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() =>
+                                    handleCopy(
+                                      `${cred.host}${cred.port ? `:${cred.port}` : ""}`,
+                                      `host-${cred.id}`
+                                    )
+                                  }
+                                  className="h-5 w-5 text-slate-400"
+                                  title="Salin host"
+                                >
+                                  {copiedField === `host-${cred.id}` ? (
+                                    <Check className="h-3 w-3 text-emerald-600" />
+                                  ) : (
+                                    <Copy className="h-3 w-3" />
+                                  )}
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-slate-500">Username:</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono font-semibold text-slate-900 dark:text-white">
+                                {cred.username}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleCopy(cred.username, `user-${cred.id}`)}
+                                className="h-5 w-5 text-slate-400"
+                                title="Salin username"
+                              >
+                                {copiedField === `user-${cred.id}` ? (
+                                  <Check className="h-3 w-3 text-emerald-600" />
+                                ) : (
+                                  <Copy className="h-3 w-3" />
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between text-xs border-t border-slate-200/60 dark:border-slate-800 pt-1.5">
+                            <span className="text-slate-500">Kata Sandi:</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono font-semibold text-slate-900 dark:text-white">
+                                {isPwdVisible
+                                  ? cred.passwordPlain || "Tidak disetel"
+                                  : "****************"}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => togglePasswordVisibility(cred.id)}
+                                className="h-5 w-5 text-slate-400"
+                                title={isPwdVisible ? "Sembunyikan password" : "Tampilkan password"}
+                              >
+                                {isPwdVisible ? (
+                                  <EyeOff className="h-3.5 w-3.5" />
+                                ) : (
+                                  <Eye className="h-3.5 w-3.5" />
+                                )}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() =>
+                                  handleCopy(cred.passwordPlain || "", `pwd-${cred.id}`)
+                                }
+                                className="h-5 w-5 text-slate-400"
+                                title="Salin password"
+                              >
+                                {copiedField === `pwd-${cred.id}` ? (
+                                  <Check className="h-3 w-3 text-emerald-600" />
+                                ) : (
+                                  <Copy className="h-3 w-3" />
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+
+                          {cred.notes && (
+                            <p className="text-[11px] text-slate-500 italic pt-1 border-t border-slate-200/40 dark:border-slate-800/60">
+                              Catatan: {cred.notes}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -916,6 +1103,161 @@ export default function ProjectDetailPage({
               onClick={handleDeleteProject}
             >
               {isDeletingProject ? "Menghapus..." : "Hapus Proyek"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal Tambah Kredensial Server Baru */}
+      <Modal
+        isOpen={addCredModalOpen}
+        onClose={() => setAddCredModalOpen(false)}
+        title="Tambah Kredensial Server"
+        description={`Tambahkan detail akses server atau database baru untuk proyek '${project.name}'.`}
+      >
+        <form onSubmit={handleAddCredential} className="space-y-4 text-xs">
+          {credError && (
+            <div className="p-3 rounded-lg border border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300 flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+              <span>{credError}</span>
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Nama / Label Kredensial <span className="text-rose-500">*</span>
+            </label>
+            <Input
+              required
+              value={credName}
+              onChange={(e) => setCredName(e.target.value)}
+              placeholder="Contoh: Server Production (AWS), Database Staging"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Tipe Akses
+              </label>
+              <select
+                value={credType}
+                onChange={(e) => setCredType(e.target.value)}
+                className="w-full h-10 rounded-lg border border-slate-300 bg-white px-3 text-xs text-slate-900 focus:ring-2 focus:ring-blue-600 dark:border-slate-700 dark:bg-zinc-900 dark:text-slate-100"
+              >
+                <option value="vps">VPS / Dedicated Server</option>
+                <option value="ssh">SSH Server</option>
+                <option value="database">Database Server</option>
+                <option value="cpanel">cPanel / Web Hosting</option>
+                <option value="api">API Key / Token</option>
+                <option value="other">Lainnya</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Port (Opsional)
+              </label>
+              <Input
+                value={credPort}
+                onChange={(e) => setCredPort(e.target.value)}
+                placeholder="22, 5432, 3306"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Host / IP / URL Panel
+            </label>
+            <Input
+              value={credHost}
+              onChange={(e) => setCredHost(e.target.value)}
+              placeholder="Contoh: 103.145.xx.xx atau db.domain.com"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Username / Akun <span className="text-rose-500">*</span>
+              </label>
+              <Input
+                required
+                value={credUsername}
+                onChange={(e) => setCredUsername(e.target.value)}
+                placeholder="admin, root, postgres"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Kata Sandi
+              </label>
+              <Input
+                type="password"
+                value={credPassword}
+                onChange={(e) => setCredPassword(e.target.value)}
+                placeholder="Password rahasia..."
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Catatan Akses (Opsional)
+            </label>
+            <Input
+              value={credNotes}
+              onChange={(e) => setCredNotes(e.target.value)}
+              placeholder="Contoh: Terhubung via VPN kantor, jumpbox port 2222"
+            />
+          </div>
+
+          <div className="pt-2 flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setAddCredModalOpen(false)}
+            >
+              Batal
+            </Button>
+            <Button type="submit" size="sm" disabled={submittingCred}>
+              {submittingCred ? "Menyimpan..." : "Simpan Kredensial"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Dialog Konfirmasi Hapus Kredensial */}
+      <Modal
+        isOpen={!!credToDelete}
+        onClose={() => setCredToDelete(null)}
+        title="Konfirmasi Hapus Kredensial"
+        description={`Apakah Anda yakin ingin menghapus kredensial '${credToDelete?.name}'?`}
+      >
+        <div className="space-y-4 text-xs text-slate-600 dark:text-slate-300">
+          <p>
+            Tindakan ini akan menghapus kredensial akses ini dari database. Pengembang dan anggota tim tidak akan dapat melihat detail akun ini lagi.
+          </p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setCredToDelete(null)}
+            >
+              Batal
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              size="sm"
+              disabled={isDeletingCred}
+              onClick={handleDeleteCredential}
+            >
+              {isDeletingCred ? "Menghapus..." : "Hapus Kredensial"}
             </Button>
           </div>
         </div>

@@ -141,6 +141,27 @@ export const projectNotes = pgTable(
   (table) => [index("project_notes_project_idx").on(table.projectId)]
 );
 
+export const projectCredentials = pgTable(
+  "project_credentials",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    type: text("type").notNull().default("other"),
+    host: text("host"),
+    port: text("port"),
+    username: text("username").notNull(),
+    password: text("password").notNull(),
+    iv: text("iv").notNull(),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [index("project_credentials_project_idx").on(table.projectId)]
+);
+
 export const activityLogs = pgTable(
   "activity_logs",
   {
@@ -171,6 +192,14 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   }),
   projectMembers: many(projectMembers),
   notes: many(projectNotes),
+  credentials: many(projectCredentials),
+}));
+
+export const projectCredentialsRelations = relations(projectCredentials, ({ one }) => ({
+  project: one(projects, {
+    fields: [projectCredentials.projectId],
+    references: [projects.id],
+  }),
 }));
 
 export const projectMembersRelations = relations(projectMembers, ({ one }) => ({

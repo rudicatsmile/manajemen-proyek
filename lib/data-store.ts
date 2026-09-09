@@ -14,6 +14,19 @@ import {
 // Zod Schemas & Types
 // ==========================================
 
+export const projectCredentialInputSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().min(1, "Nama/label kredensial wajib diisi"),
+  type: z.string().default("other"),
+  host: z.string().optional(),
+  port: z.string().optional(),
+  username: z.string().min(1, "Username wajib diisi"),
+  password: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export type ProjectCredentialInput = z.infer<typeof projectCredentialInputSchema>;
+
 export const projectFormSchema = z.object({
   name: z.string().min(3, "Nama proyek wajib diisi minimal 3 karakter"),
   clientId: z.string().min(1, "Klien wajib dipilih"),
@@ -25,6 +38,7 @@ export const projectFormSchema = z.object({
   repositoryUrl: z.string().optional(),
   credentialUsername: z.string().optional(),
   credentialPassword: z.string().optional(),
+  credentials: z.array(projectCredentialInputSchema).optional(),
 });
 
 export type ProjectFormValues = z.infer<typeof projectFormSchema>;

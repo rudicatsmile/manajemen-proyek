@@ -7,6 +7,7 @@ import {
   Client,
   ProjectMember,
   ProjectNote,
+  ProjectCredential,
   INITIAL_CLIENTS,
 } from "@/lib/mock-data";
 import { getCurrentUser, getOrCreateDbMember } from "@/lib/auth";
@@ -21,9 +22,10 @@ import {
   members,
   projectMembers,
   projectNotes,
+  projectCredentials,
   activityLogs,
 } from "@/lib/db/schema";
-import { eq, desc, or } from "drizzle-orm";
+import { eq, desc, or, and } from "drizzle-orm";
 import {
   projectFormSchema,
   ProjectFormValues,
@@ -51,6 +53,7 @@ function mapDbProject(
         author?: typeof members.$inferSelect | null;
       }
     >;
+    credentials?: Array<typeof projectCredentials.$inferSelect>;
   },
   githubDetails?: GitHubRepoDetails
 ): Project {
@@ -118,6 +121,41 @@ function mapDbProject(
     updatedAt: n.updatedAt ? n.updatedAt.toISOString() : new Date().toISOString(),
   }));
 
+  const mappedCredentials: ProjectCredential[] = (p.credentials || []).map((c) => {
+    let plain = "";
+    if (c.password && c.iv) {
+      plain = decryptCredential(c.password, c.iv);
+    }
+    return {
+      id: c.id,
+      projectId: c.projectId,
+      name: c.name,
+      type: c.type || "other",
+      host: c.host || undefined,
+      port: c.port || undefined,
+      username: c.username,
+      passwordPlain: plain,
+      passwordEncrypted: c.password ? `enc_${c.password.slice(0, 16)}_gcm` : "",
+      notes: c.notes || undefined,
+      createdAt: c.createdAt ? c.createdAt.toISOString() : new Date().toISOString(),
+      updatedAt: c.updatedAt ? c.updatedAt.toISOString() : new Date().toISOString(),
+    };
+  });
+
+  if (mappedCredentials.length === 0 && (p.credentialUsername || p.credentialPassword)) {
+    mappedCredentials.push({
+      id: `legacy-${p.id}`,
+      projectId: p.id,
+      name: "Server Utama (Default)",
+      type: "vps",
+      username: p.credentialUsername || "",
+      passwordPlain: plainPass,
+      passwordEncrypted: p.credentialPassword ? `enc_${p.credentialPassword.slice(0, 16)}_gcm` : "",
+      createdAt: p.createdAt ? p.createdAt.toISOString() : new Date().toISOString(),
+      updatedAt: p.updatedAt ? p.updatedAt.toISOString() : new Date().toISOString(),
+    });
+  }
+
   return {
     id: p.id,
     name: p.name,
@@ -134,6 +172,7 @@ function mapDbProject(
       ? `enc_${p.credentialPassword.substring(0, 16)}_gcm`
       : "",
     credentialPasswordPlain: plainPass,
+    credentials: mappedCredentials,
     githubDetails: githubDetails || {
       connected: !!p.repositoryUrl,
       repoUrl: p.repositoryUrl || "",
@@ -171,6 +210,7 @@ export async function getProjectsAction(): Promise<Project[]> {
               author: true,
             },
           },
+          credentials: true,
         },
         orderBy: [desc(projects.createdAt)],
       });
@@ -203,6 +243,7 @@ export async function getProjectByIdAction(id: string): Promise<Project | null> 
               author: true,
             },
           },
+          credentials: true,
         },
       });
 
@@ -277,13 +318,33 @@ export async function createProjectAction(data: ProjectFormValues) {
           console.warn("Could not add initial project member:", memberErr);
         }
 
-        // Ambil data lengkap dengan relasi client
+        // Tambahkan kredensial jika disediakan
+        if (parsed.credentials && parsed.credentials.length > 0) {
+          for (const cred of parsed.credentials) {
+            if (!cred.name || !cred.username) continue;
+            const credEnc = cred.password ? encryptCredential(cred.password) : { encrypted: "", iv: "" };
+            await db.insert(projectCredentials).values({
+              projectId: inserted.id,
+              name: cred.name,
+              type: cred.type || "other",
+              host: cred.host || null,
+              port: cred.port || null,
+              username: cred.username,
+              password: credEnc.encrypted,
+              iv: credEnc.iv,
+              notes: cred.notes || null,
+            });
+          }
+        }
+
+        // Ambil data lengkap dengan relasi client dan credentials
         const full = await db.query.projects.findFirst({
           where: eq(projects.id, inserted.id),
           with: {
             client: true,
             projectMembers: { with: { member: true } },
             notes: { with: { author: true } },
+            credentials: true,
           },
         });
 
@@ -301,6 +362,17 @@ export async function createProjectAction(data: ProjectFormValues) {
           credentialUsername: inserted.credentialUsername || "",
           credentialPasswordEncrypted: enc ? `enc_${enc.encrypted.slice(0, 16)}_gcm` : "",
           credentialPasswordPlain: parsed.credentialPassword || "",
+          credentials: (parsed.credentials || []).map((c, idx) => ({
+            id: c.id || `cred-${idx}`,
+            projectId: inserted.id,
+            name: c.name,
+            type: c.type || "other",
+            host: c.host,
+            port: c.port,
+            username: c.username,
+            passwordPlain: c.password || "",
+            notes: c.notes,
+          })),
           githubDetails,
           members: [],
           notes: [],
@@ -330,6 +402,17 @@ export async function createProjectAction(data: ProjectFormValues) {
       credentialUsername: parsed.credentialUsername || "",
       credentialPasswordEncrypted: enc ? `enc_${enc.encrypted.slice(0, 16)}_gcm` : "",
       credentialPasswordPlain: parsed.credentialPassword || "",
+      credentials: (parsed.credentials || []).map((c, idx) => ({
+        id: c.id || `cred-${idx}`,
+        projectId: `proj-${Date.now()}`,
+        name: c.name,
+        type: c.type || "other",
+        host: c.host,
+        port: c.port,
+        username: c.username,
+        passwordPlain: c.password || "",
+        notes: c.notes,
+      })),
       githubDetails,
       members: [],
       notes: [],
@@ -390,12 +473,67 @@ export async function updateProjectAction(id: string, data: ProjectFormValues) {
         .set(updatePayload)
         .where(or(eq(projects.id, id), eq(projects.slug, id)));
 
+      // Sinkronisasi kredensial jika dikirimkan
+      if (parsed.credentials !== undefined) {
+        const existingCreds = await db
+          .select()
+          .from(projectCredentials)
+          .where(eq(projectCredentials.projectId, id));
+
+        const incomingIds = new Set(
+          parsed.credentials
+            .filter((c) => c.id && !c.id.startsWith("new-") && !c.id.startsWith("legacy-"))
+            .map((c) => c.id as string)
+        );
+
+        for (const ec of existingCreds) {
+          if (!incomingIds.has(ec.id)) {
+            await db.delete(projectCredentials).where(eq(projectCredentials.id, ec.id));
+          }
+        }
+
+        for (const c of parsed.credentials) {
+          if (!c.name || !c.username) continue;
+          if (c.id && incomingIds.has(c.id)) {
+            const updateData: Record<string, unknown> = {
+              name: c.name,
+              type: c.type || "other",
+              host: c.host || null,
+              port: c.port || null,
+              username: c.username,
+              notes: c.notes || null,
+              updatedAt: new Date(),
+            };
+            if (c.password && c.password.trim()) {
+              const encCred = encryptCredential(c.password);
+              updateData.password = encCred.encrypted;
+              updateData.iv = encCred.iv;
+            }
+            await db.update(projectCredentials).set(updateData).where(eq(projectCredentials.id, c.id));
+          } else {
+            const encCred = c.password ? encryptCredential(c.password) : { encrypted: "", iv: "" };
+            await db.insert(projectCredentials).values({
+              projectId: id,
+              name: c.name,
+              type: c.type || "other",
+              host: c.host || null,
+              port: c.port || null,
+              username: c.username,
+              password: encCred.encrypted,
+              iv: encCred.iv,
+              notes: c.notes || null,
+            });
+          }
+        }
+      }
+
       const full = await db.query.projects.findFirst({
         where: or(eq(projects.id, id), eq(projects.slug, id)),
         with: {
           client: true,
           projectMembers: { with: { member: true } },
           notes: { with: { author: true } },
+          credentials: true,
         },
       });
 
@@ -431,6 +569,19 @@ export async function updateProjectAction(id: string, data: ProjectFormValues) {
       credentialUsername: parsed.credentialUsername || "",
       credentialPasswordEncrypted: enc ? `enc_${enc.encrypted.slice(0, 16)}_gcm` : prev.credentialPasswordEncrypted,
       credentialPasswordPlain: parsed.credentialPassword || prev.credentialPasswordPlain,
+      credentials: parsed.credentials
+        ? parsed.credentials.map((c, idx) => ({
+            id: c.id || `cred-${idx}`,
+            projectId: prev.id,
+            name: c.name,
+            type: c.type || "other",
+            host: c.host,
+            port: c.port,
+            username: c.username,
+            passwordPlain: c.password || "",
+            notes: c.notes,
+          }))
+        : prev.credentials || [],
       updatedAt: new Date().toISOString(),
     };
     runtimeProjects[index] = updatedProject;
