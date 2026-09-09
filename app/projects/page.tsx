@@ -17,6 +17,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Banknote,
+  LayoutGrid,
+  LayoutList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatRupiah } from "@/lib/currency";
@@ -49,6 +51,29 @@ export default function ProjectsPage() {
   const [isDeleting, setIsDeleting] = React.useState(false);
   const [successMessage, setSuccessMessage] = React.useState("");
   const [errorMessage, setErrorMessage] = React.useState("");
+
+  // Mode tampilan: 'detailed' (kartu rinci) atau 'compact' (satu baris ringkas)
+  const [viewMode, setViewMode] = React.useState<"detailed" | "compact">("detailed");
+
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem("pm_projects_view_mode");
+      if (saved === "detailed" || saved === "compact") {
+        setViewMode(saved);
+      }
+    } catch {
+      // Abaikan jika localStorage tidak diizinkan di browser
+    }
+  }, []);
+
+  const handleViewModeChange = (mode: "detailed" | "compact") => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem("pm_projects_view_mode", mode);
+    } catch {
+      // Abaikan
+    }
+  };
 
   React.useEffect(() => {
     async function loadData() {
@@ -224,12 +249,44 @@ export default function ProjectsPage() {
           </CardContent>
         </Card>
 
-        {/* Project Results Summary */}
-        <div className="flex items-center justify-between text-xs text-slate-500">
+        {/* Project Results Summary & View Mode Switcher */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-500">
           <span>
             Menampilkan <strong className="text-slate-900 dark:text-white">{filteredProjects.length}</strong> dari{" "}
             {allProjects.length} total proyek
           </span>
+
+          {/* Segmented Control Mode Detail / Mode Ringkas */}
+          <div className="flex items-center rounded-lg border border-slate-200 bg-slate-100/90 p-0.5 dark:border-slate-800 dark:bg-zinc-900 self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => handleViewModeChange("detailed")}
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-all",
+                viewMode === "detailed"
+                  ? "bg-white text-slate-900 shadow-xs dark:bg-zinc-800 dark:text-white font-semibold"
+                  : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white font-medium"
+              )}
+              aria-label="Mode Detail"
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+              <span>Mode Detail</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleViewModeChange("compact")}
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-all",
+                viewMode === "compact"
+                  ? "bg-white text-slate-900 shadow-xs dark:bg-zinc-800 dark:text-white font-semibold"
+                  : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white font-medium"
+              )}
+              aria-label="Mode Ringkas"
+            >
+              <LayoutList className="h-3.5 w-3.5" />
+              <span>Mode Ringkas</span>
+            </button>
+          </div>
         </div>
 
         {/* Projects List View */}
@@ -251,23 +308,23 @@ export default function ProjectsPage() {
               Kosongkan Filter
             </Button>
           </Card>
-        ) : (
+        ) : viewMode === "detailed" ? (
           <div className="grid grid-cols-1 gap-4">
             {filteredProjects.map((project) => {
               const statusInfo = STATUS_CONFIG[project.status];
               return (
                 <Card
                   key={project.id}
-                  className="border-slate-200 shadow-xs hover:border-blue-400 transition-all dark:border-slate-800 dark:hover:border-blue-800"
+                  className="border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-zinc-900 dark:hover:border-slate-700 transition-all shadow-xs"
                 >
                   <CardContent className="p-5 sm:p-6 space-y-4">
-                    {/* Header Row */}
-                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                      <div className="space-y-1">
+                    {/* Card Header Info */}
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                      <div className="space-y-1.5">
                         <div className="flex items-center gap-2.5 flex-wrap">
                           <Link
                             href={`/projects/${project.id}`}
-                            className="text-base sm:text-lg font-bold text-slate-900 hover:text-blue-600 dark:text-white dark:hover:text-blue-400 transition-colors"
+                            className="text-base sm:text-lg font-bold text-slate-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                           >
                             {project.name}
                           </Link>
@@ -413,6 +470,70 @@ export default function ProjectsPage() {
                     </div>
                   </CardContent>
                 </Card>
+              );
+            })}
+          </div>
+        ) : (
+          /* Mode Ringkas: Single-line Compact Row List */
+          <div className="rounded-xl border border-slate-200 bg-white shadow-xs dark:border-slate-800 dark:bg-zinc-900 divide-y divide-slate-100 dark:divide-zinc-800 overflow-hidden">
+            {filteredProjects.map((project) => {
+              const statusInfo = STATUS_CONFIG[project.status];
+              return (
+                <div
+                  key={project.id}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:px-4 hover:bg-slate-50/70 dark:hover:bg-zinc-850/50 transition-colors"
+                >
+                  {/* Left: Nama Proyek & Klien & Status */}
+                  <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 flex-wrap">
+                    <Link
+                      href={`/projects/${project.id}`}
+                      className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors truncate"
+                      title={project.name}
+                    >
+                      {project.name}
+                    </Link>
+                    <span className="text-slate-300 dark:text-zinc-700 hidden sm:inline">|</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400 truncate hidden sm:inline">
+                      {project.client.companyName}
+                    </span>
+                    <span
+                      className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold border shrink-0 ${statusInfo.bgClass} ${statusInfo.textClass} ${statusInfo.borderClass}`}
+                    >
+                      {statusInfo.label}
+                    </span>
+                  </div>
+
+                  {/* Right Action Buttons */}
+                  <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                    <Link href={`/projects/${project.id}/edit`}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-2.5 text-xs gap-1"
+                        title="Edit proyek"
+                      >
+                        <Edit className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">Edit</span>
+                      </Button>
+                    </Link>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setProjectToDelete(project)}
+                      className="h-8 px-2.5 text-xs gap-1 text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-slate-200 dark:border-slate-800 dark:hover:bg-rose-950/40"
+                      title="Hapus proyek"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Hapus</span>
+                    </Button>
+                    <Link href={`/projects/${project.id}`}>
+                      <Button size="sm" className="h-8 px-3 text-xs gap-1">
+                        <span className="hidden sm:inline">Detail</span>
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
               );
             })}
           </div>
