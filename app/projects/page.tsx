@@ -115,6 +115,13 @@ export default function ProjectsPage() {
         selectedClient === "all" || project.clientId === selectedClient;
 
       return matchQuery && matchStatus && matchClient;
+    }).sort((a, b) => {
+      const orderA = a.order ?? 0;
+      const orderB = b.order ?? 0;
+      if (orderA !== orderB) {
+        return orderA - orderB;
+      }
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
   }, [allProjects, searchQuery, selectedStatus, selectedClient]);
 

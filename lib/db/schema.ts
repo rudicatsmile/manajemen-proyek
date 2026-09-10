@@ -11,6 +11,7 @@ import {
   uniqueIndex,
   index,
   numeric,
+  integer,
 } from "drizzle-orm/pg-core";
 
 export const projectStatusEnum = pgEnum("project_status", [
@@ -90,6 +91,7 @@ export const projects = pgTable(
     repositoryUrl: text("repository_url"),
     liveUrl: text("live_url"),
     contractAmount: numeric("contract_amount"),
+    order: integer("order").notNull().default(0),
     lastHealthStatus: text("last_health_status"),
     lastHttpCode: text("last_http_code"),
     lastResponseTime: text("last_response_time"),
@@ -109,6 +111,7 @@ export const projects = pgTable(
     index("projects_name_idx").on(table.name),
     index("projects_client_id_idx").on(table.clientId),
     index("projects_status_idx").on(table.status),
+    index("projects_order_idx").on(table.order),
   ]
 );
 

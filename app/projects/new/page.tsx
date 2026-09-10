@@ -18,6 +18,7 @@ import {
   KeyRound,
   Banknote,
   Globe,
+  ArrowUpDown,
 } from "lucide-react";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,7 @@ export default function CreateProjectPage() {
   const [repositoryUrl, setRepositoryUrl] = React.useState("https://github.com/");
   const [liveUrl, setLiveUrl] = React.useState("");
   const [contractAmountInput, setContractAmountInput] = React.useState("");
+  const [order, setOrder] = React.useState<number>(0);
   const [credentialsList, setCredentialsList] = React.useState<
     Array<{
       id: string;
@@ -144,6 +146,7 @@ export default function CreateProjectPage() {
         repositoryUrl,
         liveUrl: liveUrl.trim() || undefined,
         contractAmount: parseRupiahInput(contractAmountInput),
+        order: Number(order) || 0,
         credentialUsername: validCredentials[0]?.username || "",
         credentialPassword: validCredentials[0]?.password || "",
         credentials: validCredentials,
@@ -266,6 +269,25 @@ export default function CreateProjectPage() {
                   placeholder="Jelaskan tujuan software, ruang lingkup pengerjaan, atau fitur utama..."
                   className="w-full rounded-lg border border-slate-300 bg-white p-3 text-xs text-slate-900 shadow-xs focus:outline-none focus:ring-2 focus:ring-blue-600 dark:border-slate-700 dark:bg-zinc-900 dark:text-slate-100"
                 />
+              </div>
+
+              {/* Urutan Tampilan (Order) */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <ArrowUpDown className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                  Urutan Tampilan (Order)
+                </label>
+                <Input
+                  type="number"
+                  value={order}
+                  onChange={(e) => setOrder(parseInt(e.target.value, 10) || 0)}
+                  placeholder="0"
+                  min={0}
+                  className="font-medium"
+                />
+                <p className="text-[11px] text-slate-400">
+                  Semakin kecil angka, semakin atas posisinya di daftar. Default: 0.
+                </p>
               </div>
 
               {/* Input Nilai Kontrak */}

@@ -44,7 +44,9 @@ export default async function DashboardPage() {
   const totalClients = clients.length;
   const totalMembers = members.length;
 
-  const recentProjects = projects.slice(0, 5);
+  const recentProjects = [...projects]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 5);
   const recentActivities = activities.slice(0, 5);
 
   return (

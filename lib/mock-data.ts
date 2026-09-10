@@ -168,6 +168,7 @@ export interface Project {
   liveUrl?: string;
   contractAmount?: number;
   payments?: ProjectPayment[];
+  order?: number;
   lastHealthStatus?: "online" | "degraded" | "offline" | "unchecked";
   lastHttpCode?: number;
   lastResponseTime?: number;

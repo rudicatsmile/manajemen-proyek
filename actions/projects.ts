@@ -27,7 +27,7 @@ import {
   projectPayments,
   activityLogs,
 } from "@/lib/db/schema";
-import { eq, desc, or, and } from "drizzle-orm";
+import { eq, desc, asc, or, and } from "drizzle-orm";
 import {
   projectFormSchema,
   ProjectFormValues,
@@ -213,6 +213,7 @@ function mapDbProject(
     notes: mappedNotes,
     contractAmount: p.contractAmount ? parseFloat(p.contractAmount) : 0,
     payments: mappedPayments,
+    order: p.order ?? 0,
     createdAt: p.createdAt ? p.createdAt.toISOString() : new Date().toISOString(),
     updatedAt: p.updatedAt ? p.updatedAt.toISOString() : new Date().toISOString(),
   };
@@ -239,7 +240,7 @@ export async function getProjectsAction(): Promise<Project[]> {
             orderBy: [desc(projectPayments.paymentDate)],
           },
         },
-        orderBy: [desc(projects.createdAt)],
+        orderBy: [asc(projects.order), desc(projects.createdAt)],
       });
 
       if (dbProjects.length > 0) {
@@ -250,7 +251,13 @@ export async function getProjectsAction(): Promise<Project[]> {
     console.error("Error fetching projects from Neon DB, falling back to runtime:", err);
   }
 
-  return runtimeProjects;
+  return runtimeProjects
+    .slice()
+    .sort(
+      (a, b) =>
+        (a.order ?? 0) - (b.order ?? 0) ||
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
 }
 
 export async function getProjectByIdAction(id: string): Promise<Project | null> {
@@ -330,6 +337,7 @@ export async function createProjectAction(data: ProjectFormValues) {
           repositoryUrl: repoUrl || null,
           liveUrl: parsed.liveUrl ? parsed.liveUrl.trim() : null,
           contractAmount: parsed.contractAmount ? parsed.contractAmount.toString() : null,
+          order: parsed.order ?? 0,
           credentialUsername: parsed.credentialUsername || null,
           credentialPassword: enc ? enc.encrypted : null,
           credentialIv: enc ? enc.iv : null,
@@ -448,6 +456,7 @@ export async function createProjectAction(data: ProjectFormValues) {
       githubDetails,
       members: [],
       notes: [],
+      order: parsed.order ?? 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -493,6 +502,7 @@ export async function updateProjectAction(id: string, data: ProjectFormValues) {
         repositoryUrl: parsed.repositoryUrl || null,
         liveUrl: parsed.liveUrl !== undefined ? (parsed.liveUrl ? parsed.liveUrl.trim() : null) : undefined,
         contractAmount: parsed.contractAmount !== undefined ? (parsed.contractAmount ? parsed.contractAmount.toString() : null) : undefined,
+        order: parsed.order !== undefined ? parsed.order : 0,
         credentialUsername: parsed.credentialUsername || null,
         updatedAt: new Date(),
       };
@@ -602,6 +612,7 @@ export async function updateProjectAction(id: string, data: ProjectFormValues) {
       repositoryUrl: parsed.repositoryUrl || prev.repositoryUrl,
       liveUrl: parsed.liveUrl !== undefined ? parsed.liveUrl : prev.liveUrl,
       contractAmount: parsed.contractAmount !== undefined ? parsed.contractAmount : prev.contractAmount,
+      order: parsed.order !== undefined ? parsed.order : prev.order ?? 0,
       credentialUsername: parsed.credentialUsername || "",
       credentialPasswordEncrypted: enc ? `enc_${enc.encrypted.slice(0, 16)}_gcm` : prev.credentialPasswordEncrypted,
       credentialPasswordPlain: parsed.credentialPassword || prev.credentialPasswordPlain,
