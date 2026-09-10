@@ -405,6 +405,8 @@ export default function ProjectsPage() {
                     {/* Financial summary bar */}
                     {(() => {
                       const contract = project.contractAmount || 0;
+                      if (contract <= 0) return null;
+
                       const payments = project.payments || [];
                       const paid = payments.reduce((sum, p) => sum + p.amount, 0);
                       const remaining = Math.max(0, contract - paid);
@@ -419,44 +421,34 @@ export default function ProjectsPage() {
                             <Banknote className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                             <span className="text-slate-500 font-medium">Kontrak:</span>
                             <span className="font-bold text-slate-800 dark:text-slate-200">
-                              {contract > 0 ? formatRupiah(contract) : "Belum diatur"}
+                              {formatRupiah(contract)}
                             </span>
                           </div>
 
                           <div className="flex items-center gap-2.5">
-                            {contract > 0 ? (
-                              <>
-                                <div className="flex items-center gap-1 text-[11px]">
-                                  <span className="text-slate-400">Terbayar:</span>
-                                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                                    {formatRupiah(paid)}
-                                  </span>
-                                  <span className="text-slate-400 font-mono">({percent}%)</span>
-                                </div>
-                                <span
-                                  className={cn(
-                                    "inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold border",
-                                    remaining === 0
-                                      ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
-                                      : paid > 0
-                                      ? "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800"
-                                      : "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
-                                  )}
-                                >
-                                  {remaining === 0
-                                    ? "Lunas"
-                                    : paid > 0
-                                    ? "Sebagian"
-                                    : "Belum Bayar"}
-                                </span>
-                              </>
-                            ) : (
-                              <span className="text-[11px] text-slate-400">
-                                {payments.length > 0
-                                  ? `${payments.length} pembayaran dicatat`
-                                  : "Belum ada tagihan"}
+                            <div className="flex items-center gap-1 text-[11px]">
+                              <span className="text-slate-400">Terbayar:</span>
+                              <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                                {formatRupiah(paid)}
                               </span>
-                            )}
+                              <span className="text-slate-400 font-mono">({percent}%)</span>
+                            </div>
+                            <span
+                              className={cn(
+                                "inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold border",
+                                remaining === 0
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
+                                  : paid > 0
+                                  ? "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800"
+                                  : "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
+                              )}
+                            >
+                              {remaining === 0
+                                ? "Lunas"
+                                : paid > 0
+                                ? "Sebagian"
+                                : "Belum Bayar"}
+                            </span>
                           </div>
                         </div>
                       );
